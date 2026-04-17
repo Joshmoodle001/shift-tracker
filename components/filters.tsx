@@ -30,6 +30,8 @@ export function Filters({
   const [showStoreDropdown, setShowStoreDropdown] = useState(false);
   const [codeSearch, setCodeSearch] = useState('');
   const [showCodeDropdown, setShowCodeDropdown] = useState(false);
+  const [repSearch, setRepSearch] = useState('');
+  const [showRepDropdown, setShowRepDropdown] = useState(false);
 
   const filteredStores = storeSearch
     ? stores.filter(s => s.toLowerCase().includes(storeSearch.toLowerCase()))
@@ -39,12 +41,17 @@ export function Filters({
     ? employeeCodes.filter(c => c.toLowerCase().includes(codeSearch.toLowerCase()))
     : employeeCodes.slice(0, 50);
 
+  const filteredReps = repSearch
+    ? reps.filter(r => r.toLowerCase().includes(repSearch.toLowerCase()))
+    : reps;
+
   const clearFilters = () => {
     onStoreFilter('');
     onRepFilter('');
     onEmployeeCodeFilter('');
     setStoreSearch('');
     setCodeSearch('');
+    setRepSearch('');
   };
 
   const hasFilters = selectedStore || selectedRep || selectedEmployeeCode;
@@ -178,24 +185,61 @@ export function Filters({
             Filter by Rep
           </label>
           <div className="relative">
-            <select
-              value={selectedRep}
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+            <input
+              type="text"
+              placeholder="Type rep name..."
+              value={repSearch}
               onChange={(e) => {
-                onRepFilter(e.target.value);
+                setRepSearch(e.target.value);
+                setShowRepDropdown(true);
               }}
-              className="w-full px-4 py-2.5 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 appearance-none bg-white cursor-pointer"
-            >
-              <option value="">All Reps</option>
-              {reps.map(rep => (
-                <option key={rep} value={rep}>{rep}</option>
-              ))}
-            </select>
-            <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none">
-              <svg className="w-4 h-4 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-              </svg>
-            </div>
+              onFocus={() => setShowRepDropdown(true)}
+              className="w-full pl-10 pr-4 py-2.5 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+            />
+            {selectedRep && (
+              <button
+                onClick={() => {
+                  onRepFilter('');
+                  setRepSearch('');
+                }}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            )}
           </div>
+          {showRepDropdown && (
+            <div className="absolute z-10 w-full mt-1 bg-white border border-slate-200 rounded-lg shadow-lg max-h-48 overflow-y-auto">
+              <button
+                onClick={() => {
+                  onRepFilter('');
+                  setRepSearch('');
+                  setShowRepDropdown(false);
+                }}
+                className="w-full text-left px-4 py-2 text-sm hover:bg-slate-50 border-b border-slate-100"
+              >
+                All Reps
+              </button>
+              {filteredReps.length > 0 ? (
+                filteredReps.map(rep => (
+                  <button
+                    key={rep}
+                    onClick={() => {
+                      onRepFilter(rep);
+                      setRepSearch(rep);
+                      setShowRepDropdown(false);
+                    }}
+                    className="w-full text-left px-4 py-2 text-sm hover:bg-slate-50 border-b border-slate-100 last:border-0"
+                  >
+                    {rep}
+                  </button>
+                ))
+              ) : (
+                <div className="px-4 py-2 text-sm text-slate-500">No reps found</div>
+              )}
+            </div>
+          )}
         </div>
       </div>
     </div>
