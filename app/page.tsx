@@ -31,6 +31,8 @@ interface DbSigned {
   id_number: string;
 }
 
+const PAGE_SIZE = 1000;
+
 function normalizeEmployeeCode(code: string): string {
   return String(code || '').replace(/\s+/g, '').toUpperCase();
 }
@@ -75,17 +77,32 @@ export default function Home() {
   const [isLoading, setIsLoading] = useState(true);
   const [lastUpdated, setLastUpdated] = useState('');
 
+  const fetchAllRows = useCallback(async <T,>(table: string): Promise<T[]> => {
+    const rows: T[] = [];
+    let from = 0;
+
+    while (true) {
+      const to = from + PAGE_SIZE - 1;
+      const { data, error } = await supabase.from(table).select('*').range(from, to);
+      if (error) throw error;
+      if (!data || data.length === 0) break;
+
+      rows.push(...(data as T[]));
+      if (data.length < PAGE_SIZE) break;
+      from += PAGE_SIZE;
+    }
+
+    return rows;
+  }, []);
+
   const loadData = useCallback(async () => {
     setIsLoading(true);
     try {
-      const [empRes, signedRes, uploadRes] = await Promise.all([
-        supabase.from('shift_employees').select('*').limit(5000),
-        supabase.from('shift_signed').select('*').limit(5000),
+      const [employees, signed, uploadRes] = await Promise.all([
+        fetchAllRows<DbEmployee>('shift_employees'),
+        fetchAllRows<DbSigned>('shift_signed'),
         supabase.from('shift_uploads').select('created_at').order('created_at', { ascending: false }).limit(1),
       ]);
-
-      const employees: DbEmployee[] = empRes.data || [];
-      const signed: DbSigned[] = signedRes.data || [];
 
       if (employees.length === 0) {
         setStoreData([]);
@@ -178,7 +195,7 @@ export default function Home() {
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [fetchAllRows]);
 
   useEffect(() => {
     // Initial data hydration from Supabase on page load.
