@@ -7,154 +7,126 @@ import { Filters } from '@/components/filters';
 import { RepProgressTable } from '@/components/rep-progress-table';
 import { StoreDetailTable } from '@/components/store-detail-table';
 import { RepProgress, StoreData, EmployeeDetail } from '@/lib/types';
-import { parseRouteList, parseSignedShifts, mergeData, getUniqueReps, getUniqueStores, RawEmployee, RawSignedShift } from '@/lib/data-processing';
-import { ClipboardCheck, RefreshCw, Upload as UploadIcon } from 'lucide-react';
+import { supabase } from '@/lib/supabase';
+import { ClipboardCheck, RefreshCw, Shield, Loader2 } from 'lucide-react';
+import Link from 'next/link';
 
-const STORAGE_KEY = 'shift-tracker-data';
-
-interface PersistedData {
-  stores: StoreData[];
-  reps: string[];
-  storeNames: string[];
-  employees: RawEmployee[];
-  employeeDetails: EmployeeDetail[];
-  timestamp: string;
+interface DbEmployee {
+  employee_code: string;
+  first_name: string;
+  last_name: string;
+  store: string;
+  rep: string;
+  company: string;
+  job_title: string;
+  employee_status: string;
 }
 
-function loadPersistedData(): PersistedData | null {
-  if (typeof window === 'undefined') return null;
-  const stored = localStorage.getItem(STORAGE_KEY);
-  if (stored) {
-    try {
-      return JSON.parse(stored);
-    } catch {
-      return null;
-    }
-  }
-  return null;
-}
-
-function savePersistedData(data: PersistedData) {
-  if (typeof window === 'undefined') return;
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+interface DbSigned {
+  employee_code: string;
+  employee_name: string;
+  store: string;
+  status: string;
 }
 
 export default function Home() {
   const [storeData, setStoreData] = useState<StoreData[]>([]);
   const [reps, setReps] = useState<string[]>([]);
   const [storeNames, setStoreNames] = useState<string[]>([]);
+  const [employeeDetails, setEmployeeDetails] = useState<EmployeeDetail[]>([]);
   const [selectedStore, setSelectedStore] = useState('');
   const [selectedRep, setSelectedRep] = useState('');
-  const [isProcessing, setIsProcessing] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
   const [lastUpdated, setLastUpdated] = useState('');
-  const [routeListFile, setRouteListFile] = useState<File | null>(null);
-  const [signedShiftsFile, setSignedShiftsFile] = useState<File | null>(null);
-  const [error, setError] = useState('');
-  const [employees, setEmployees] = useState<RawEmployee[]>([]);
-  const [employeeDetails, setEmployeeDetails] = useState<EmployeeDetail[]>([]);
   const [initialized, setInitialized] = useState(false);
 
-  useEffect(() => {
-    const persisted = loadPersistedData();
-    if (persisted) {
-      setStoreData(persisted.stores);
-      setReps(persisted.reps);
-      setStoreNames(persisted.storeNames);
-      setEmployees(persisted.employees);
-      setEmployeeDetails(persisted.employeeDetails || []);
-      setLastUpdated(new Date(persisted.timestamp).toLocaleString());
-    }
-    setInitialized(true);
-  }, []);
-
-  const buildStoreData = useCallback((emps: RawEmployee[], signedShifts: Awaited<ReturnType<typeof parseSignedShifts>>) => {
-    const merged = mergeData(emps, signedShifts);
-    const stores: StoreData[] = [];
-
-    for (const [key, counts] of merged.entries()) {
-      const [rep, store] = key.split('||');
-      const empCodes = emps
-        .filter(e => e.Rep === rep && e.Store === store)
-        .map(e => e['Employee Code']);
-      stores.push({
-        store,
-        rep,
-        employee_codes: empCodes,
-        signed_count: counts.signed,
-        not_signed_count: counts.not_signed
-      });
-    }
-
-    return stores;
-  }, []);
-
-  const buildEmployeeDetails = useCallback((emps: RawEmployee[], signedShifts: RawSignedShift[]): EmployeeDetail[] => {
-    return emps.map(emp => {
-      const signed = signedShifts.find(s => s['Employee Code'] === emp['Employee Code']);
-      return {
-        employee_code: emp['Employee Code'],
-        first_name: emp['First Name'],
-        last_name: emp['Last Name'],
-        store: emp.Store,
-        rep: emp.Rep,
-        job_title: emp['Job Title'],
-        employee_status: emp['Employee Status'],
-        signed: signed?.Status === 'Signed'
-      };
-    });
-  }, []);
-
-  const processFiles = useCallback(async (routeFile: File | null, signedFile: File | null) => {
-    setIsProcessing(true);
-    setError('');
-
+  const loadData = useCallback(async () => {
+    setIsLoading(true);
     try {
-      let emps = employees;
+      const [empRes, signedRes, uploadRes] = await Promise.all([
+        supabase.from('shift_employees').select('*'),
+        supabase.from('shift_signed').select('*'),
+        supabase.from('shift_uploads').select('created_at').order('created_at', { ascending: false }).limit(1),
+      ]);
 
-      if (routeFile) {
-        const buffer = await routeFile.arrayBuffer();
-        emps = parseRouteList(buffer);
-        setEmployees(emps);
-      }
+      const employees: DbEmployee[] = empRes.data || [];
+      const signed: DbSigned[] = signedRes.data || [];
 
-      if (emps.length === 0) {
-        setError('No Checkers/Shoprite employees found. Upload the Route List first.');
-        setIsProcessing(false);
+      if (employees.length === 0) {
+        setStoreData([]);
+        setReps([]);
+        setStoreNames([]);
+        setEmployeeDetails([]);
+        setIsLoading(false);
         return;
       }
 
-      let signedShifts: Awaited<ReturnType<typeof parseSignedShifts>> = [];
-      if (signedFile) {
-        const buffer = await signedFile.arrayBuffer();
-        signedShifts = parseSignedShifts(buffer);
+      const signedMap = new Map<string, boolean>();
+      for (const s of signed) {
+        signedMap.set(s.employee_code, s.status === 'Signed');
       }
 
-      const stores = buildStoreData(emps, signedShifts);
-      const details = buildEmployeeDetails(emps, signedShifts);
-      const uniqueReps = getUniqueReps(emps);
-      const uniqueStoreNames = getUniqueStores(emps);
-      const timestamp = new Date().toISOString();
+      const details: EmployeeDetail[] = employees.map(e => ({
+        employee_code: e.employee_code,
+        first_name: e.first_name,
+        last_name: e.last_name,
+        store: e.store,
+        rep: e.rep,
+        job_title: e.job_title,
+        employee_status: e.employee_status,
+        signed: signedMap.get(e.employee_code) ?? false,
+      }));
+      setEmployeeDetails(details);
+
+      const mergedMap = new Map<string, { signed: number; not_signed: number; codes: string[] }>();
+      for (const e of employees) {
+        const key = `${e.rep}||${e.store}`;
+        const isSigned = signedMap.get(e.employee_code) ?? false;
+        const existing = mergedMap.get(key);
+        if (existing) {
+          if (isSigned) existing.signed += 1; else existing.not_signed += 1;
+          existing.codes.push(e.employee_code);
+        } else {
+          mergedMap.set(key, {
+            signed: isSigned ? 1 : 0,
+            not_signed: isSigned ? 0 : 1,
+            codes: [e.employee_code],
+          });
+        }
+      }
+
+      const stores: StoreData[] = [];
+      for (const [key, val] of mergedMap.entries()) {
+        const [rep, store] = key.split('||');
+        stores.push({
+          store,
+          rep,
+          employee_codes: val.codes,
+          signed_count: val.signed,
+          not_signed_count: val.not_signed,
+        });
+      }
+
+      const uniqueReps = [...new Set(employees.map(e => e.rep))].sort();
+      const uniqueStores = [...new Set(employees.map(e => e.store))].sort();
 
       setStoreData(stores);
-      setEmployeeDetails(details);
       setReps(uniqueReps);
-      setStoreNames(uniqueStoreNames);
-      setLastUpdated(new Date(timestamp).toLocaleString());
+      setStoreNames(uniqueStores);
 
-      savePersistedData({
-        stores,
-        reps: uniqueReps,
-        storeNames: uniqueStoreNames,
-        employees: emps,
-        employeeDetails: details,
-        timestamp
-      });
+      if (uploadRes.data && uploadRes.data.length > 0) {
+        setLastUpdated(new Date(uploadRes.data[0].created_at).toLocaleString());
+      }
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to process files');
+      console.error('Failed to load data:', err);
     } finally {
-      setIsProcessing(false);
+      setIsLoading(false);
     }
-  }, [employees, buildStoreData, buildEmployeeDetails]);
+  }, []);
+
+  useEffect(() => {
+    loadData().then(() => setInitialized(true));
+  }, [loadData]);
 
   const filteredData = storeData
     .filter(d => !selectedStore || d.store.toLowerCase().includes(selectedStore.toLowerCase()))
@@ -174,7 +146,7 @@ export default function Home() {
           total_stores: 1,
           signed: d.signed_count,
           not_signed: d.not_signed_count,
-          progress: 0
+          progress: 0,
         });
       }
     }
@@ -208,127 +180,50 @@ export default function Home() {
                   Updated: {lastUpdated}
                 </span>
               )}
-              {storeData.length > 0 && (
-                <button
-                  onClick={() => {
-                    localStorage.removeItem(STORAGE_KEY);
-                    setRouteListFile(null);
-                    setSignedShiftsFile(null);
-                    setStoreData([]);
-                    setReps([]);
-                    setStoreNames([]);
-                    setEmployees([]);
-                    setEmployeeDetails([]);
-                    setSelectedStore('');
-                    setSelectedRep('');
-                    setLastUpdated('');
-                    setError('');
-                  }}
-                  className="text-sm text-slate-600 hover:text-slate-800 px-3 py-1.5 rounded-lg hover:bg-slate-100"
-                >
-                  Reset
-                </button>
-              )}
+              <button
+                onClick={loadData}
+                disabled={isLoading}
+                className="text-sm text-slate-600 hover:text-slate-800 px-3 py-1.5 rounded-lg hover:bg-slate-100 flex items-center gap-1"
+              >
+                <RefreshCw className={`w-4 h-4 ${isLoading ? 'animate-spin' : ''}`} />
+                Refresh
+              </button>
+              <Link
+                href="/admin"
+                className="text-sm text-blue-600 hover:text-blue-700 px-3 py-1.5 rounded-lg hover:bg-blue-50 flex items-center gap-1"
+              >
+                <Shield className="w-4 h-4" />
+                Admin
+              </Link>
             </div>
           </div>
         </div>
       </header>
 
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        {storeData.length === 0 && (
-          <div className="mb-8">
-            <div className="bg-white rounded-xl border border-slate-200 p-6 shadow-sm">
-              <div className="flex items-center gap-2 mb-6">
-                <UploadIcon className="w-5 h-5 text-blue-600" />
-                <h2 className="text-lg font-semibold text-slate-900">Upload Data Files</h2>
-              </div>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-2">
-                    Route List (Store Universe) <span className="text-red-500">*</span>
-                  </label>
-                  <FileUploader
-                    onUpload={(file) => setRouteListFile(file)}
-                    label="Upload Route List Excel"
-                    currentFile={routeListFile?.name}
-                  />
-                  <p className="text-xs text-slate-500 mt-2">
-                    Contains employee codes, stores, and rep assignments
-                  </p>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-2">
-                    Signed Shifts (Addendum B)
-                  </label>
-                  <FileUploader
-                    onUpload={(file) => setSignedShiftsFile(file)}
-                    label="Upload Signed Shifts Excel"
-                    currentFile={signedShiftsFile?.name}
-                  />
-                  <p className="text-xs text-slate-500 mt-2">
-                    Contains signed/not signed status per employee
-                  </p>
-                </div>
-              </div>
-              <div className="flex items-center gap-4">
-                <button
-                  onClick={() => processFiles(routeListFile, signedShiftsFile)}
-                  disabled={isProcessing || !routeListFile}
-                  className={`
-                    flex items-center gap-2 px-6 py-2.5 rounded-lg font-medium text-sm text-white
-                    ${isProcessing || !routeListFile
-                      ? 'bg-slate-400 cursor-not-allowed'
-                      : 'bg-blue-600 hover:bg-blue-700'
-                    }
-                  `}
-                >
-                  {isProcessing ? (
-                    <>
-                      <RefreshCw className="w-4 h-4 animate-spin" />
-                      Processing...
-                    </>
-                  ) : (
-                    <>
-                      <ClipboardCheck className="w-4 h-4" />
-                      Process Files
-                    </>
-                  )}
-                </button>
-                {error && (
-                  <p className="text-sm text-red-600">{error}</p>
-                )}
-              </div>
-            </div>
+        {isLoading ? (
+          <div className="flex flex-col items-center justify-center py-24">
+            <Loader2 className="w-8 h-8 text-blue-600 animate-spin mb-4" />
+            <p className="text-slate-600">Loading data from database...</p>
           </div>
-        )}
-
-        {storeData.length > 0 && (
-          <div className="mb-6">
-            <div className="bg-white rounded-xl border border-slate-200 p-4 shadow-sm">
-              <div className="flex items-center gap-4 flex-wrap">
-                <div className="flex items-center gap-2 shrink-0">
-                  <UploadIcon className="w-5 h-5 text-blue-600" />
-                  <span className="text-sm font-medium text-slate-700">Upload New Signed Docs:</span>
-                </div>
-                <div className="flex-1 min-w-[300px] max-w-lg">
-                  <FileUploader
-                    onUpload={async (file) => {
-                      setSignedShiftsFile(file);
-                      await processFiles(null, file);
-                    }}
-                    label="Upload new signed shifts Excel"
-                    currentFile={signedShiftsFile?.name}
-                  />
-                </div>
-                {isProcessing && (
-                  <RefreshCw className="w-5 h-5 text-blue-600 animate-spin" />
-                )}
-              </div>
+        ) : storeData.length === 0 ? (
+          <div className="flex flex-col items-center justify-center py-24">
+            <div className="p-4 bg-slate-100 rounded-full mb-4">
+              <ClipboardCheck className="w-10 h-10 text-slate-400" />
             </div>
+            <h2 className="text-xl font-semibold text-slate-900 mb-2">No Data Loaded</h2>
+            <p className="text-slate-500 mb-6 text-center max-w-md">
+              Upload the Route List and Signed Shifts files via the Admin panel to populate the dashboard.
+            </p>
+            <Link
+              href="/admin"
+              className="flex items-center gap-2 px-6 py-2.5 bg-blue-600 text-white rounded-lg font-medium text-sm hover:bg-blue-700"
+            >
+              <Shield className="w-4 h-4" />
+              Go to Admin
+            </Link>
           </div>
-        )}
-
-        {storeData.length > 0 && (
+        ) : (
           <>
             <div className="mb-6">
               <DashboardStats data={repProgress} />
