@@ -4,8 +4,7 @@ import { useState, useCallback, useEffect } from 'react';
 import { FileUploader } from '@/components/file-uploader';
 import { DashboardStats } from '@/components/dashboard-stats';
 import { Filters } from '@/components/filters';
-import { RepProgressTable } from '@/components/rep-progress-table';
-import { StoreDetailTable } from '@/components/store-detail-table';
+import { HierarchyView } from '@/components/hierarchy-view';
 import { RepProgress, StoreData, EmployeeDetail } from '@/lib/types';
 import { supabase } from '@/lib/supabase';
 import { ClipboardCheck, RefreshCw, Shield, Loader2 } from 'lucide-react';
@@ -241,11 +240,11 @@ export default function Home() {
             </div>
 
             <div className="mb-6">
-              <RepProgressTable data={repProgress} employeeDetails={employeeDetails} />
-            </div>
-
-            <div className="mb-6">
-              <StoreDetailTable data={filteredData} />
+              <HierarchyView
+                repProgress={repProgress}
+                storeData={filteredData}
+                employeeDetails={employeeDetails}
+              />
             </div>
           </>
         )}

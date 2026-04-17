@@ -11,8 +11,7 @@ CREATE TABLE IF NOT EXISTS shift_employees (
   company TEXT NOT NULL DEFAULT '',
   job_title TEXT NOT NULL DEFAULT '',
   employee_status TEXT NOT NULL DEFAULT '',
-  created_at TIMESTAMPTZ DEFAULT NOW(),
-  UNIQUE(employee_code, store)
+  created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
 -- Signed shifts from Addendum B
@@ -26,8 +25,7 @@ CREATE TABLE IF NOT EXISTS shift_signed (
   date TEXT NOT NULL DEFAULT '',
   department TEXT NOT NULL DEFAULT '',
   hours NUMERIC DEFAULT 0,
-  created_at TIMESTAMPTZ DEFAULT NOW(),
-  UNIQUE(employee_code)
+  created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
 -- Upload history
