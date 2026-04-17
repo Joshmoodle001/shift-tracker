@@ -79,16 +79,16 @@ export function HierarchyView({
           style={{ width: `${pct}%` }}
         />
       </div>
-      <span className="text-xs font-medium text-slate-600 w-10 text-right">{pct}%</span>
+      <span className="text-xs font-medium text-slate-600 w-9 sm:w-10 text-right shrink-0">{pct}%</span>
     </div>
   );
 
   return (
     <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
-      <div className="px-6 py-4 border-b border-slate-200 flex items-center gap-2">
+      <div className="px-3 sm:px-6 py-3 sm:py-4 border-b border-slate-200 flex flex-wrap items-center gap-2">
         <Users className="w-5 h-5 text-blue-600" />
         <h3 className="font-semibold text-slate-900">{title}</h3>
-        <span className="text-xs text-slate-500 ml-2">{subtitle}</span>
+        <span className="text-xs text-slate-500 sm:ml-2">{subtitle}</span>
       </div>
 
       {sortedReps.length === 0 && (
@@ -104,24 +104,26 @@ export function HierarchyView({
             <div key={rep.rep}>
               {/* Rep Row */}
               <div
-                className="flex items-center gap-3 px-6 py-3.5 cursor-pointer hover:bg-slate-50 select-none"
+                className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3 px-3 sm:px-6 py-3.5 cursor-pointer hover:bg-slate-50 select-none"
                 onClick={() => toggleRep(rep.rep)}
               >
-                <div className={`transition-transform ${repOpen ? 'rotate-90' : ''}`}>
-                  <ChevronRight className="w-5 h-5 text-slate-400" />
+                <div className="flex items-center gap-3 w-full min-w-0">
+                  <div className={`transition-transform ${repOpen ? 'rotate-90' : ''}`}>
+                    <ChevronRight className="w-5 h-5 text-slate-400" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-semibold text-slate-900 truncate">{rep.rep}</p>
+                    <p className="text-xs text-slate-500">{rep.total_stores} store{rep.total_stores !== 1 ? 's' : ''}</p>
+                  </div>
                 </div>
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-semibold text-slate-900 truncate">{rep.rep}</p>
-                  <p className="text-xs text-slate-500">{rep.total_stores} store{rep.total_stores !== 1 ? 's' : ''}</p>
-                </div>
-                <div className="flex items-center gap-3 shrink-0">
+                <div className="flex flex-wrap items-center gap-2 sm:gap-3 w-full sm:w-auto sm:shrink-0">
                   <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
                     {rep.signed} signed
                   </span>
                   <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800">
                     {rep.not_signed} not signed
                   </span>
-                  <div className="w-28">{progressBar(rep.progress)}</div>
+                  <div className="w-full sm:w-28">{progressBar(rep.progress)}</div>
                 </div>
               </div>
 
@@ -141,32 +143,34 @@ export function HierarchyView({
                       <div key={storeKey} className={si > 0 ? 'border-t border-slate-200' : ''}>
                         {/* Store Row */}
                         <div
-                          className="flex items-center gap-3 pl-12 pr-6 py-3 cursor-pointer hover:bg-slate-100/60 select-none"
+                          className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3 pl-4 sm:pl-12 pr-3 sm:pr-6 py-3 cursor-pointer hover:bg-slate-100/60 select-none"
                           onClick={() => toggleStore(storeKey)}
                         >
-                          <div className={`transition-transform ${storeOpen ? 'rotate-90' : ''}`}>
-                            <ChevronRight className="w-4 h-4 text-slate-400" />
+                          <div className="flex items-center gap-3 w-full min-w-0">
+                            <div className={`transition-transform ${storeOpen ? 'rotate-90' : ''}`}>
+                              <ChevronRight className="w-4 h-4 text-slate-400" />
+                            </div>
+                            <Store className="w-4 h-4 text-blue-500 shrink-0" />
+                            <div className="flex-1 min-w-0">
+                              <p className="text-sm font-medium text-slate-800 truncate" title={store.store}>
+                                {store.store}
+                              </p>
+                            </div>
                           </div>
-                          <Store className="w-4 h-4 text-blue-500 shrink-0" />
-                          <div className="flex-1 min-w-0">
-                            <p className="text-sm font-medium text-slate-800 truncate" title={store.store}>
-                              {store.store}
-                            </p>
-                          </div>
-                          <div className="flex items-center gap-3 shrink-0">
+                          <div className="flex flex-wrap items-center gap-2 sm:gap-3 w-full sm:w-auto sm:shrink-0">
                             <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
                               {store.signed_count}
                             </span>
                             <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800">
                               {store.not_signed_count}
                             </span>
-                            <div className="w-28">{progressBar(storePct)}</div>
+                            <div className="w-full sm:w-28">{progressBar(storePct)}</div>
                           </div>
                         </div>
 
                         {/* Expanded: Employees */}
                         {storeOpen && (
-                          <div className="pl-20 pr-6 pb-3">
+                          <div className="pl-6 sm:pl-20 pr-3 sm:pr-6 pb-3">
                             <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
                               {/* Signed */}
                               <div>
@@ -237,7 +241,7 @@ export function HierarchyView({
                   })}
 
                   {stores.length === 0 && (
-                    <div className="pl-12 py-3 text-sm text-slate-500">No stores for this rep</div>
+                    <div className="pl-4 sm:pl-12 py-3 text-sm text-slate-500">No stores for this rep</div>
                   )}
                 </div>
               )}

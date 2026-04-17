@@ -57,19 +57,19 @@ export function DashboardStats({ data }: DashboardStatsProps) {
   ];
 
   return (
-    <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
+    <div className="grid grid-cols-1 min-[420px]:grid-cols-2 md:grid-cols-3 xl:grid-cols-5 gap-3 sm:gap-4">
       {stats.map((stat) => (
         <div
           key={stat.label}
-          className="bg-white rounded-xl p-5 border border-slate-200 shadow-sm"
+          className="bg-white rounded-xl p-4 sm:p-5 border border-slate-200 shadow-sm"
         >
           <div className="flex items-center gap-3 mb-3">
             <div className={`p-2 rounded-lg ${stat.bgColor}`}>
               <stat.icon className={`w-5 h-5 ${stat.textColor}`} />
             </div>
           </div>
-          <p className="text-2xl font-bold text-slate-900">{stat.value}</p>
-          <p className="text-sm text-slate-500 mt-1">{stat.label}</p>
+          <p className="text-xl sm:text-2xl font-bold text-slate-900">{stat.value}</p>
+          <p className="text-xs sm:text-sm text-slate-500 mt-1">{stat.label}</p>
         </div>
       ))}
     </div>

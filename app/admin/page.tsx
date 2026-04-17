@@ -212,7 +212,7 @@ export default function AdminPage() {
   if (!authenticated) {
     return (
       <div className="min-h-screen bg-slate-50 flex items-center justify-center">
-        <div className="bg-white rounded-2xl border border-slate-200 shadow-lg p-8 w-full max-w-sm">
+        <div className="bg-white rounded-2xl border border-slate-200 shadow-lg p-6 sm:p-8 w-full max-w-sm mx-3">
           <div className="flex flex-col items-center gap-4 mb-6">
             <div className="p-3 bg-blue-600 rounded-full">
               <Shield className="w-8 h-8 text-white" />
@@ -253,8 +253,8 @@ export default function AdminPage() {
   return (
     <div className="min-h-screen bg-slate-50">
       <header className="bg-white border-b border-slate-200 sticky top-0 z-50">
-        <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex items-center justify-between h-16">
+        <div className="max-w-5xl mx-auto px-3 sm:px-6 lg:px-8">
+          <div className="py-3 sm:py-0 sm:h-16 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div className="flex items-center gap-3">
               <div className="p-2 bg-blue-600 rounded-lg">
                 <Shield className="w-6 h-6 text-white" />
@@ -264,7 +264,7 @@ export default function AdminPage() {
                 <p className="text-xs text-slate-500">Upload & manage shift data</p>
               </div>
             </div>
-            <div className="flex items-center gap-3">
+            <div className="flex items-center justify-between sm:justify-end gap-3">
               <Link
                 href="/"
                 className="text-sm text-blue-600 hover:text-blue-700 flex items-center gap-1"
@@ -283,9 +283,9 @@ export default function AdminPage() {
         </div>
       </header>
 
-      <main className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+      <main className="max-w-5xl mx-auto px-3 sm:px-6 lg:px-8 py-6 sm:py-8">
         {/* Stats */}
-        <div className="grid grid-cols-3 gap-4 mb-8">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-8">
           <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-sm">
             <p className="text-2xl font-bold text-slate-900">{stats.employees}</p>
             <p className="text-sm text-slate-500">Employees in DB</p>
@@ -301,7 +301,7 @@ export default function AdminPage() {
         </div>
 
         {/* Upload Section */}
-        <div className="bg-white rounded-xl border border-slate-200 p-6 shadow-sm mb-8">
+        <div className="bg-white rounded-xl border border-slate-200 p-4 sm:p-6 shadow-sm mb-8">
           <div className="flex items-center gap-2 mb-6">
             <Upload className="w-5 h-5 text-blue-600" />
             <h2 className="text-lg font-semibold text-slate-900">Upload Data Files</h2>
@@ -339,7 +339,7 @@ export default function AdminPage() {
               onClick={() => processFiles(routeListFile, signedShiftsFile)}
               disabled={isProcessing || (!routeListFile && !signedShiftsFile)}
               className={`
-                flex items-center gap-2 px-6 py-2.5 rounded-lg font-medium text-sm text-white
+                flex items-center justify-center gap-2 px-6 py-2.5 rounded-lg font-medium text-sm text-white w-full sm:w-auto
                 ${isProcessing || (!routeListFile && !signedShiftsFile)
                   ? 'bg-slate-400 cursor-not-allowed'
                   : 'bg-blue-600 hover:bg-blue-700'
@@ -361,7 +361,7 @@ export default function AdminPage() {
             <button
               onClick={clearAllData}
               disabled={isProcessing}
-              className="flex items-center gap-2 px-4 py-2.5 rounded-lg font-medium text-sm text-red-600 border border-red-200 hover:bg-red-50"
+              className="flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg font-medium text-sm text-red-600 border border-red-200 hover:bg-red-50 w-full sm:w-auto"
             >
               <Trash2 className="w-4 h-4" />
               Clear All Data
@@ -385,7 +385,7 @@ export default function AdminPage() {
           {uploadHistory.length > 0 ? (
             <div className="divide-y divide-slate-200">
               {uploadHistory.map((upload) => (
-                <div key={upload.id} className="px-6 py-3 flex items-center gap-4">
+                <div key={upload.id} className="px-4 sm:px-6 py-3 flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4">
                   <div className={`p-1.5 rounded ${upload.file_type === 'route_list' ? 'bg-purple-100' : 'bg-green-100'}`}>
                     <Upload className={`w-4 h-4 ${upload.file_type === 'route_list' ? 'text-purple-600' : 'text-green-600'}`} />
                   </div>
@@ -395,7 +395,7 @@ export default function AdminPage() {
                       {upload.file_type === 'route_list' ? 'Route List' : 'Signed Shifts'} &middot; {upload.record_count} records
                     </p>
                   </div>
-                  <p className="text-xs text-slate-500">
+                  <p className="text-xs text-slate-500 sm:text-right">
                     {new Date(upload.created_at).toLocaleString()}
                   </p>
                 </div>

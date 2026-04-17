@@ -231,8 +231,8 @@ export default function Home() {
   return (
     <div className="min-h-screen bg-slate-50">
       <header className="bg-white border-b border-slate-200 sticky top-0 z-50">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex items-center justify-between h-16">
+        <div className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8">
+          <div className="py-3 sm:py-0 sm:h-16 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div className="flex items-center gap-3">
               <div className="p-2 bg-blue-600 rounded-lg">
                 <ClipboardCheck className="w-6 h-6 text-white" />
@@ -242,23 +242,23 @@ export default function Home() {
                 <p className="text-xs text-slate-500">Merchandiser Sign-off Dashboard</p>
               </div>
             </div>
-            <div className="flex items-center gap-4">
+            <div className="flex items-center justify-between sm:justify-end gap-2 sm:gap-4">
               {lastUpdated && (
-                <span className="text-xs text-slate-500 hidden sm:block">
+                <span className="text-[11px] sm:text-xs text-slate-500 hidden sm:block">
                   Updated: {lastUpdated}
                 </span>
               )}
               <button
                 onClick={loadData}
                 disabled={isLoading}
-                className="text-sm text-slate-600 hover:text-slate-800 px-3 py-1.5 rounded-lg hover:bg-slate-100 flex items-center gap-1"
+                className="text-sm text-slate-600 hover:text-slate-800 px-3 py-1.5 rounded-lg hover:bg-slate-100 flex items-center gap-1 shrink-0"
               >
                 <RefreshCw className={`w-4 h-4 ${isLoading ? 'animate-spin' : ''}`} />
                 Refresh
               </button>
               <Link
                 href="/admin"
-                className="text-sm text-blue-600 hover:text-blue-700 px-3 py-1.5 rounded-lg hover:bg-blue-50 flex items-center gap-1"
+                className="text-sm text-blue-600 hover:text-blue-700 px-3 py-1.5 rounded-lg hover:bg-blue-50 flex items-center gap-1 shrink-0"
               >
                 <Shield className="w-4 h-4" />
                 Admin
@@ -268,7 +268,7 @@ export default function Home() {
         </div>
       </header>
 
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+      <main className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 py-6 sm:py-8">
         {isLoading ? (
           <div className="flex flex-col items-center justify-center py-24">
             <Loader2 className="w-8 h-8 text-blue-600 animate-spin mb-4" />
