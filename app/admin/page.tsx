@@ -55,9 +55,22 @@ export default function AdminPage() {
     setMessage(null);
 
     try {
+      const CHUNK = 500;
+
       if (routeFile) {
-        const buffer = await routeFile.arrayBuffer();
-        const employees = parseRouteList(buffer);
+        let buffer: ArrayBuffer;
+        try {
+          buffer = await routeFile.arrayBuffer();
+        } catch (readErr) {
+          throw new Error('Failed to read route list file: ' + (readErr instanceof Error ? readErr.message : String(readErr)));
+        }
+
+        let employees: RawEmployee[];
+        try {
+          employees = parseRouteList(buffer);
+        } catch (parseErr) {
+          throw new Error('Failed to parse route list: ' + (parseErr instanceof Error ? parseErr.message : String(parseErr)));
+        }
 
         if (employees.length === 0) {
           setMessage({ type: 'error', text: 'No Checkers/Shoprite employees found in the route list.' });
@@ -65,7 +78,8 @@ export default function AdminPage() {
           return;
         }
 
-        await supabase.from('shift_employees').delete().neq('id', 0);
+        const { error: delErr } = await supabase.from('shift_employees').delete().neq('id', 0);
+        if (delErr) throw new Error('Failed to clear existing employees: ' + delErr.message);
 
         const rows = employees.map(e => ({
           employee_code: e['Employee Code'],
@@ -78,21 +92,36 @@ export default function AdminPage() {
           employee_status: e['Employee Status'],
         }));
 
-        const { error: insertError } = await supabase.from('shift_employees').insert(rows);
-        if (insertError) throw insertError;
+        for (let i = 0; i < rows.length; i += CHUNK) {
+          const chunk = rows.slice(i, i + CHUNK);
+          const { error: insertError } = await supabase.from('shift_employees').insert(chunk);
+          if (insertError) throw new Error(`Insert employees failed (batch ${Math.floor(i / CHUNK) + 1}): ${insertError.message}`);
+        }
 
-        await supabase.from('shift_uploads').insert({
+        const { error: uploadErr } = await supabase.from('shift_uploads').insert({
           file_name: routeFile.name,
           file_type: 'route_list',
           record_count: employees.length,
         });
+        if (uploadErr) console.warn('Upload log error:', uploadErr.message);
 
         setMessage({ type: 'success', text: `Route list uploaded: ${employees.length} employees imported.` });
       }
 
       if (signedFile) {
-        const buffer = await signedFile.arrayBuffer();
-        const signedShifts = parseSignedShifts(buffer);
+        let buffer: ArrayBuffer;
+        try {
+          buffer = await signedFile.arrayBuffer();
+        } catch (readErr) {
+          throw new Error('Failed to read signed shifts file: ' + (readErr instanceof Error ? readErr.message : String(readErr)));
+        }
+
+        let signedShifts: RawSignedShift[];
+        try {
+          signedShifts = parseSignedShifts(buffer);
+        } catch (parseErr) {
+          throw new Error('Failed to parse signed shifts: ' + (parseErr instanceof Error ? parseErr.message : String(parseErr)));
+        }
 
         if (signedShifts.length === 0) {
           setMessage({ type: 'error', text: 'No signed shifts found in the file.' });
@@ -100,7 +129,8 @@ export default function AdminPage() {
           return;
         }
 
-        await supabase.from('shift_signed').delete().neq('id', 0);
+        const { error: delErr } = await supabase.from('shift_signed').delete().neq('id', 0);
+        if (delErr) throw new Error('Failed to clear existing signed records: ' + delErr.message);
 
         const rows = signedShifts.map(s => ({
           employee_code: s['Employee Code'],
@@ -113,8 +143,11 @@ export default function AdminPage() {
           hours: 0,
         }));
 
-        const { error: insertError } = await supabase.from('shift_signed').insert(rows);
-        if (insertError) throw insertError;
+        for (let i = 0; i < rows.length; i += CHUNK) {
+          const chunk = rows.slice(i, i + CHUNK);
+          const { error: insertError } = await supabase.from('shift_signed').insert(chunk);
+          if (insertError) throw new Error(`Insert signed failed (batch ${Math.floor(i / CHUNK) + 1}): ${insertError.message}`);
+        }
 
         await supabase.from('shift_uploads').insert({
           file_name: signedFile.name,
@@ -125,9 +158,11 @@ export default function AdminPage() {
         setMessage({ type: 'success', text: `Signed shifts uploaded: ${signedShifts.length} records imported.` });
       }
 
-      loadUploadHistory();
+      await loadUploadHistory();
     } catch (err) {
-      setMessage({ type: 'error', text: err instanceof Error ? err.message : 'Failed to process files' });
+      const msg = err instanceof Error ? err.message : 'Failed to process files';
+      console.error('Upload error:', err);
+      setMessage({ type: 'error', text: msg });
     } finally {
       setIsProcessing(false);
     }
