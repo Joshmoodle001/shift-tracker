@@ -46,8 +46,8 @@ export default function Home() {
     setIsLoading(true);
     try {
       const [empRes, signedRes, uploadRes] = await Promise.all([
-        supabase.from('shift_employees').select('*'),
-        supabase.from('shift_signed').select('*'),
+        supabase.from('shift_employees').select('*').limit(5000),
+        supabase.from('shift_signed').select('*').limit(5000),
         supabase.from('shift_uploads').select('created_at').order('created_at', { ascending: false }).limit(1),
       ]);
 

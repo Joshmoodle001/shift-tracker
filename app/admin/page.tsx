@@ -57,6 +57,15 @@ export default function AdminPage() {
     try {
       const CHUNK = 500;
 
+      const deleteAll = async (table: string) => {
+        let deleted = true;
+        while (deleted) {
+          const { error, count } = await supabase.from(table).delete().neq('id', 0).select('id');
+          if (error) throw new Error(`Failed to clear ${table}: ${error.message}`);
+          deleted = (count ?? 0) > 0;
+        }
+      };
+
       if (routeFile) {
         let buffer: ArrayBuffer;
         try {
@@ -81,8 +90,7 @@ export default function AdminPage() {
         const reassigned = employees.filter(e => e['Original Rep'] !== e.Rep).length;
         const reassignedNote = reassigned > 0 ? ` (${reassigned} reassigned from general codes like HOLD/MATERNITY/ILL HEALTH)` : '';
 
-        const { error: delErr } = await supabase.from('shift_employees').delete().neq('id', 0);
-        if (delErr) throw new Error('Failed to clear existing employees: ' + delErr.message);
+        await deleteAll('shift_employees');
 
         const rows = employees.map(e => ({
           employee_code: e['Employee Code'],
@@ -133,8 +141,7 @@ export default function AdminPage() {
           return;
         }
 
-        const { error: delErr } = await supabase.from('shift_signed').delete().neq('id', 0);
-        if (delErr) throw new Error('Failed to clear existing signed records: ' + delErr.message);
+        await deleteAll('shift_signed');
 
         const rows = signedShifts.map(s => ({
           employee_code: s['Employee Code'],
@@ -175,9 +182,16 @@ export default function AdminPage() {
   const clearAllData = useCallback(async () => {
     if (!confirm('Are you sure you want to delete ALL data from the database?')) return;
     setIsProcessing(true);
-    await supabase.from('shift_employees').delete().neq('id', 0);
-    await supabase.from('shift_signed').delete().neq('id', 0);
-    await supabase.from('shift_uploads').delete().neq('id', 0);
+    const deleteAll = async (table: string) => {
+      let deleted = true;
+      while (deleted) {
+        const { count } = await supabase.from(table).delete().neq('id', 0).select('id');
+        deleted = (count ?? 0) > 0;
+      }
+    };
+    await deleteAll('shift_employees');
+    await deleteAll('shift_signed');
+    await deleteAll('shift_uploads');
     setMessage({ type: 'success', text: 'All data cleared.' });
     loadUploadHistory();
     setIsProcessing(false);
