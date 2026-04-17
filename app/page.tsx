@@ -219,8 +219,6 @@ export default function Home() {
       return normalizeEmployeeCode(e.employee_code).includes(selectedCode);
     });
 
-  const repProgress = calculateRepProgress(filteredData);
-
   const checkersStoreData = filteredData.filter(d => isCheckersOrShopriteStore(d.store));
   const otherStoreData = filteredData.filter(d => !isCheckersOrShopriteStore(d.store));
 
@@ -296,7 +294,21 @@ export default function Home() {
         ) : (
           <>
             <div className="mb-6">
-              <DashboardStats data={repProgress} />
+              <div className="mb-4">
+                <h2 className="text-sm font-semibold text-slate-700 uppercase tracking-wide">
+                  Checkers/Shoprite Stores
+                </h2>
+              </div>
+              <DashboardStats data={checkersRepProgress} />
+            </div>
+
+            <div className="mb-6">
+              <div className="mb-4">
+                <h2 className="text-sm font-semibold text-slate-700 uppercase tracking-wide">
+                  Non-Checkers/Shoprite Stores
+                </h2>
+              </div>
+              <DashboardStats data={otherRepProgress} />
             </div>
 
             <div className="mb-6">
