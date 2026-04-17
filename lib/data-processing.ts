@@ -113,7 +113,7 @@ export function mergeData(
   for (const emp of employees) {
     const key = `${emp.Rep}||${emp.Store}`;
     const signedShift = signedShifts.find(
-      s => s['Employee Code'] === emp['Employee Code']
+      s => s['Employee Code'].toUpperCase() === emp['Employee Code'].toUpperCase()
     );
 
     const isSigned = signedShift?.Status === 'Signed';

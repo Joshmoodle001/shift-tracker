@@ -66,7 +66,7 @@ export default function Home() {
 
       const signedMap = new Map<string, boolean>();
       for (const s of signed) {
-        signedMap.set(s.employee_code, s.status === 'Signed');
+        signedMap.set(s.employee_code.toUpperCase(), s.status === 'Signed');
       }
 
       const details: EmployeeDetail[] = employees.map(e => ({
@@ -78,14 +78,14 @@ export default function Home() {
         original_rep: e.original_rep || e.rep,
         job_title: e.job_title,
         employee_status: e.employee_status,
-        signed: signedMap.get(e.employee_code) ?? false,
+        signed: signedMap.get(e.employee_code.toUpperCase()) ?? false,
       }));
       setEmployeeDetails(details);
 
       const mergedMap = new Map<string, { signed: number; not_signed: number; codes: string[] }>();
       for (const e of employees) {
         const key = `${e.rep}||${e.store}`;
-        const isSigned = signedMap.get(e.employee_code) ?? false;
+        const isSigned = signedMap.get(e.employee_code.toUpperCase()) ?? false;
         const existing = mergedMap.get(key);
         if (existing) {
           if (isSigned) existing.signed += 1; else existing.not_signed += 1;
