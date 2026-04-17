@@ -6,9 +6,10 @@ import { Filters } from '@/components/filters';
 import { HierarchyView } from '@/components/hierarchy-view';
 import { RepProgress, StoreData, EmployeeDetail } from '@/lib/types';
 import { supabase } from '@/lib/supabase';
-import { buildSignedLookup, isCheckersOrShopriteStore } from '@/lib/data-processing';
-import { ClipboardCheck, RefreshCw, Shield, Loader2 } from 'lucide-react';
+import { buildSignedLookup, getRegionFromRep, isCheckersOrShopriteStore } from '@/lib/data-processing';
+import { ClipboardCheck, RefreshCw, Shield, Loader2, FileSpreadsheet, FileText } from 'lucide-react';
 import Link from 'next/link';
+import * as XLSX from 'xlsx';
 
 interface DbEmployee {
   employee_code: string;
@@ -67,10 +68,12 @@ function calculateRepProgress(data: StoreData[]): RepProgress[] {
 
 export default function Home() {
   const [storeData, setStoreData] = useState<StoreData[]>([]);
+  const [regions, setRegions] = useState<string[]>([]);
   const [reps, setReps] = useState<string[]>([]);
   const [storeNames, setStoreNames] = useState<string[]>([]);
   const [employeeCodes, setEmployeeCodes] = useState<string[]>([]);
   const [employeeDetails, setEmployeeDetails] = useState<EmployeeDetail[]>([]);
+  const [selectedRegion, setSelectedRegion] = useState('');
   const [selectedStore, setSelectedStore] = useState('');
   const [selectedRep, setSelectedRep] = useState('');
   const [selectedEmployeeCode, setSelectedEmployeeCode] = useState('');
@@ -106,6 +109,7 @@ export default function Home() {
 
       if (employees.length === 0) {
         setStoreData([]);
+        setRegions([]);
         setReps([]);
         setStoreNames([]);
         setEmployeeCodes([]);
@@ -179,10 +183,12 @@ export default function Home() {
       }
 
       const uniqueReps = [...new Set(employees.map(e => e.rep))].sort();
+      const uniqueRegions = [...new Set(employees.map(e => getRegionFromRep(e.rep)))].sort();
       const uniqueStores = [...new Set(employees.map(e => e.store))].sort();
       const uniqueCodes = [...new Set(employees.map(e => e.employee_code))].sort();
 
       setStoreData(stores);
+      setRegions(uniqueRegions);
       setReps(uniqueReps);
       setStoreNames(uniqueStores);
       setEmployeeCodes(uniqueCodes);
@@ -203,7 +209,12 @@ export default function Home() {
     loadData();
   }, [loadData]);
 
+  const filteredReps = selectedRegion
+    ? reps.filter((rep) => getRegionFromRep(rep) === selectedRegion)
+    : reps;
+
   const filteredData = storeData
+    .filter(d => !selectedRegion || getRegionFromRep(d.rep) === selectedRegion)
     .filter(d => !selectedStore || d.store.toLowerCase().includes(selectedStore.toLowerCase()))
     .filter(d => !selectedRep || d.rep === selectedRep)
     .filter(d => {
@@ -227,6 +238,171 @@ export default function Home() {
 
   const checkersRepProgress = calculateRepProgress(checkersStoreData);
   const otherRepProgress = calculateRepProgress(otherStoreData);
+
+  const canExport = Boolean(selectedRegion || selectedRep);
+
+  const getReportScope = useCallback(() => {
+    const scopedStores = storeData
+      .filter((d) => !selectedRegion || getRegionFromRep(d.rep) === selectedRegion)
+      .filter((d) => !selectedRep || d.rep === selectedRep);
+
+    const scopedStoreKeys = new Set(scopedStores.map((s) => `${s.rep}||${s.store}`));
+
+    const scopedEmployees = employeeDetails.filter((e) =>
+      scopedStoreKeys.has(`${e.rep}||${e.store}`)
+    );
+
+    return { scopedStores, scopedEmployees };
+  }, [storeData, employeeDetails, selectedRegion, selectedRep]);
+
+  const exportToExcel = useCallback(() => {
+    if (!canExport) return;
+    const { scopedStores, scopedEmployees } = getReportScope();
+    if (scopedStores.length === 0) return;
+
+    const repSummary = calculateRepProgress(scopedStores).map((rep) => ({
+      Region: getRegionFromRep(rep.rep),
+      Rep: rep.rep,
+      'Total Stores': rep.total_stores,
+      Signed: rep.signed,
+      'Not Signed': rep.not_signed,
+      Progress: `${rep.progress}%`,
+    }));
+
+    const storeSummary = scopedStores
+      .map((store) => {
+        const total = store.signed_count + store.not_signed_count;
+        const progress = total > 0 ? Math.round((store.signed_count / total) * 100) : 0;
+        return {
+          Region: getRegionFromRep(store.rep),
+          Rep: store.rep,
+          Store: store.store,
+          Signed: store.signed_count,
+          'Not Signed': store.not_signed_count,
+          Progress: `${progress}%`,
+        };
+      })
+      .sort((a, b) => a.Rep.localeCompare(b.Rep) || a.Store.localeCompare(b.Store));
+
+    const details = scopedEmployees
+      .map((emp) => ({
+        Region: getRegionFromRep(emp.rep),
+        Rep: emp.rep,
+        Store: emp.store,
+        'Employee Code': emp.employee_code,
+        'Merchandiser Name': `${emp.first_name} ${emp.last_name}`.trim(),
+        'Job Title': emp.job_title,
+        'Employee Status': emp.employee_status,
+        'Sign Status': emp.signed ? 'Signed' : 'Not Signed',
+      }))
+      .sort((a, b) =>
+        a.Rep.localeCompare(b.Rep) ||
+        a.Store.localeCompare(b.Store) ||
+        a['Merchandiser Name'].localeCompare(b['Merchandiser Name'])
+      );
+
+    const workbook = XLSX.utils.book_new();
+    const repWs = XLSX.utils.json_to_sheet(repSummary);
+    const storeWs = XLSX.utils.json_to_sheet(storeSummary);
+    const detailWs = XLSX.utils.json_to_sheet(details);
+    repWs['!cols'] = [{ wch: 16 }, { wch: 42 }, { wch: 12 }, { wch: 10 }, { wch: 12 }, { wch: 10 }];
+    storeWs['!cols'] = [{ wch: 16 }, { wch: 42 }, { wch: 42 }, { wch: 10 }, { wch: 12 }, { wch: 10 }];
+    detailWs['!cols'] = [{ wch: 16 }, { wch: 42 }, { wch: 42 }, { wch: 16 }, { wch: 30 }, { wch: 22 }, { wch: 18 }, { wch: 14 }];
+
+    XLSX.utils.book_append_sheet(workbook, repWs, 'Rep Summary');
+    XLSX.utils.book_append_sheet(workbook, storeWs, 'Store Summary');
+    XLSX.utils.book_append_sheet(workbook, detailWs, 'Merchandiser Details');
+
+    const dateTag = new Date().toISOString().slice(0, 10);
+    const scopeTag = selectedRep
+      ? selectedRep.replace(/[^A-Z0-9]+/gi, '_')
+      : (selectedRegion || 'ALL').replace(/[^A-Z0-9]+/gi, '_');
+    XLSX.writeFile(workbook, `shift_tracker_report_${scopeTag}_${dateTag}.xlsx`);
+  }, [canExport, getReportScope, selectedRegion, selectedRep]);
+
+  const exportToPdf = useCallback(() => {
+    if (!canExport) return;
+    const { scopedStores, scopedEmployees } = getReportScope();
+    if (scopedStores.length === 0) return;
+
+    const repList = calculateRepProgress(scopedStores).sort((a, b) => a.rep.localeCompare(b.rep));
+    const printWindow = window.open('', '_blank');
+    if (!printWindow) return;
+
+    const sections = repList.map((rep) => {
+      const storesForRep = scopedStores
+        .filter((store) => store.rep === rep.rep)
+        .sort((a, b) => a.store.localeCompare(b.store));
+
+      const storeHtml = storesForRep.map((store) => {
+        const emps = scopedEmployees
+          .filter((emp) => emp.rep === store.rep && emp.store === store.store)
+          .sort((a, b) => `${a.first_name} ${a.last_name}`.localeCompare(`${b.first_name} ${b.last_name}`));
+
+        const employeeRows = emps.map((emp) => `
+          <tr>
+            <td>${emp.first_name} ${emp.last_name}</td>
+            <td>${emp.employee_code}</td>
+            <td>${emp.job_title || ''}</td>
+            <td>${emp.signed ? 'Signed' : 'Not Signed'}</td>
+          </tr>
+        `).join('');
+
+        return `
+          <div class="store-block">
+            <h4>${store.store}</h4>
+            <p>Signed: ${store.signed_count} | Not Signed: ${store.not_signed_count}</p>
+            <table>
+              <thead>
+                <tr><th>Merchandiser</th><th>Employee Code</th><th>Job Title</th><th>Status</th></tr>
+              </thead>
+              <tbody>${employeeRows}</tbody>
+            </table>
+          </div>
+        `;
+      }).join('');
+
+      return `
+        <section>
+          <h2>${rep.rep} (${getRegionFromRep(rep.rep)})</h2>
+          <p>Total Stores: ${rep.total_stores} | Signed: ${rep.signed} | Not Signed: ${rep.not_signed} | Progress: ${rep.progress}%</p>
+          ${storeHtml}
+        </section>
+      `;
+    }).join('');
+
+    const reportTitle = selectedRep
+      ? `Rep Report - ${selectedRep}`
+      : `Region Report - ${selectedRegion}`;
+
+    printWindow.document.write(`
+      <html>
+      <head>
+        <title>${reportTitle}</title>
+        <style>
+          body { font-family: Arial, sans-serif; margin: 20px; color: #0f172a; }
+          h1 { margin-bottom: 4px; }
+          h2 { margin-top: 28px; margin-bottom: 8px; }
+          h4 { margin: 10px 0 4px; }
+          p { margin: 4px 0 10px; }
+          table { width: 100%; border-collapse: collapse; margin-bottom: 14px; }
+          th, td { border: 1px solid #cbd5e1; padding: 8px; text-align: left; font-size: 12px; }
+          th { background: #f1f5f9; }
+          .meta { color: #475569; margin-bottom: 18px; }
+          .store-block { margin-bottom: 14px; }
+        </style>
+      </head>
+      <body>
+        <h1>${reportTitle}</h1>
+        <p class="meta">Generated: ${new Date().toLocaleString()}</p>
+        ${sections}
+      </body>
+      </html>
+    `);
+    printWindow.document.close();
+    printWindow.focus();
+    printWindow.print();
+  }, [canExport, getReportScope, selectedRegion, selectedRep]);
 
   return (
     <div className="min-h-screen bg-slate-50">
@@ -303,26 +479,57 @@ export default function Home() {
             </div>
 
             <div className="mb-6">
-              <div className="mb-4">
-                <h2 className="text-sm font-semibold text-slate-700 uppercase tracking-wide">
-                  Non-Checkers/Shoprite Stores
-                </h2>
-              </div>
               <DashboardStats data={otherRepProgress} />
             </div>
 
             <div className="mb-6">
               <Filters
+                regions={regions}
                 stores={storeNames}
-                reps={reps}
+                reps={filteredReps}
                 employeeCodes={employeeCodes}
+                onRegionFilter={setSelectedRegion}
                 onStoreFilter={setSelectedStore}
                 onRepFilter={setSelectedRep}
                 onEmployeeCodeFilter={setSelectedEmployeeCode}
+                selectedRegion={selectedRegion}
                 selectedStore={selectedStore}
                 selectedRep={selectedRep}
                 selectedEmployeeCode={selectedEmployeeCode}
               />
+            </div>
+
+            <div className="mb-6 bg-white rounded-xl border border-slate-200 p-4 shadow-sm">
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                <div>
+                  <p className="text-sm font-semibold text-slate-900">Divisional Export Report</p>
+                  <p className="text-xs text-slate-500">
+                    Select a Region or Rep to enable expanded export (rep &rarr; store &rarr; merchandiser details).
+                  </p>
+                </div>
+                <div className="flex flex-col sm:flex-row gap-2">
+                  <button
+                    onClick={exportToExcel}
+                    disabled={!canExport}
+                    className={`flex items-center justify-center gap-2 px-4 py-2 rounded-lg text-sm font-medium ${
+                      canExport ? 'bg-emerald-600 text-white hover:bg-emerald-700' : 'bg-slate-200 text-slate-500 cursor-not-allowed'
+                    }`}
+                  >
+                    <FileSpreadsheet className="w-4 h-4" />
+                    Export Excel
+                  </button>
+                  <button
+                    onClick={exportToPdf}
+                    disabled={!canExport}
+                    className={`flex items-center justify-center gap-2 px-4 py-2 rounded-lg text-sm font-medium ${
+                      canExport ? 'bg-indigo-600 text-white hover:bg-indigo-700' : 'bg-slate-200 text-slate-500 cursor-not-allowed'
+                    }`}
+                  >
+                    <FileText className="w-4 h-4" />
+                    Export PDF
+                  </button>
+                </div>
+              </div>
             </div>
 
             <div className="mb-6">
@@ -340,7 +547,7 @@ export default function Home() {
                 repProgress={otherRepProgress}
                 storeData={otherStoreData}
                 employeeDetails={otherEmployeeDetails}
-                title="Rep -> Store -> Employee Hierarchy (Non-Checkers/Shoprite)"
+                title="Non-Checkers/Shoprite Stores: Rep -> Store -> Employee Hierarchy"
                 emptyMessage="No non-Checkers/Shoprite stores match the current filters."
               />
             </div>

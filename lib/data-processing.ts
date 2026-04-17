@@ -2,6 +2,10 @@ import * as XLSX from 'xlsx';
 
 const GENERAL_CODE_KEYWORDS = ['ILL HEALTH', 'HOLD LISTING', 'MATERNITY'];
 const CHECKERS_SHOPRITE_KEYWORDS = ['CHECKERS', 'SHOPRITE'];
+const REGION_LABELS = {
+  SR: 'PERISHABLES',
+  CH: 'GROCERIES',
+} as const;
 
 export function isGeneralCode(rep: string): boolean {
   const upper = String(rep || '').toUpperCase();
@@ -27,6 +31,22 @@ function formatIdNumber(val: string | number | null | undefined): string {
 export function isCheckersOrShopriteStore(store: string): boolean {
   const upper = String(store || '').toUpperCase();
   return CHECKERS_SHOPRITE_KEYWORDS.some(keyword => upper.includes(keyword));
+}
+
+export function getRegionFromRep(rep: string): string {
+  const upper = String(rep || '').toUpperCase().trim();
+  if (!upper) return 'UNASSIGNED';
+
+  if (/(^|[_\-\s])CH([_\-\s]|$)/.test(upper)) return REGION_LABELS.CH;
+  if (/(^|[_\-\s])SR\d*([_\-\s]|$)/.test(upper)) return REGION_LABELS.SR;
+
+  const codeMatchAfterHyphen = upper.match(/-\s*([A-Z]{2,4})(?=[_\-\s]|$)/);
+  if (codeMatchAfterHyphen) return codeMatchAfterHyphen[1];
+
+  const codeMatchAnywhere = upper.match(/\b([A-Z]{2,4})\b/);
+  if (codeMatchAnywhere) return codeMatchAnywhere[1];
+
+  return 'UNASSIGNED';
 }
 
 export interface RawEmployee {

@@ -4,24 +4,30 @@ import { Search, X, Filter } from 'lucide-react';
 import { useState } from 'react';
 
 interface FiltersProps {
+  regions: string[];
   stores: string[];
   reps: string[];
   employeeCodes: string[];
+  onRegionFilter: (region: string) => void;
   onStoreFilter: (store: string) => void;
   onRepFilter: (rep: string) => void;
   onEmployeeCodeFilter: (code: string) => void;
+  selectedRegion: string;
   selectedStore: string;
   selectedRep: string;
   selectedEmployeeCode: string;
 }
 
 export function Filters({
+  regions,
   stores,
   reps,
   employeeCodes,
+  onRegionFilter,
   onStoreFilter,
   onRepFilter,
   onEmployeeCodeFilter,
+  selectedRegion,
   selectedStore,
   selectedRep,
   selectedEmployeeCode
@@ -46,6 +52,7 @@ export function Filters({
     : reps;
 
   const clearFilters = () => {
+    onRegionFilter('');
     onStoreFilter('');
     onRepFilter('');
     onEmployeeCodeFilter('');
@@ -54,7 +61,7 @@ export function Filters({
     setRepSearch('');
   };
 
-  const hasFilters = selectedStore || selectedRep || selectedEmployeeCode;
+  const hasFilters = selectedRegion || selectedStore || selectedRep || selectedEmployeeCode;
 
   return (
     <div className="bg-white rounded-xl border border-slate-200 p-4 shadow-sm">
@@ -71,7 +78,35 @@ export function Filters({
         )}
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+        {/* Region Filter */}
+        <div className="relative">
+          <label className="block text-sm font-medium text-slate-700 mb-2">
+            Region
+          </label>
+          <div className="relative">
+            <select
+              value={selectedRegion}
+              onChange={(e) => {
+                onRegionFilter(e.target.value);
+                onRepFilter('');
+                setRepSearch('');
+              }}
+              className="w-full px-4 py-2.5 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 appearance-none bg-white"
+            >
+              <option value="">All Regions</option>
+              {regions.map(region => (
+                <option key={region} value={region}>{region}</option>
+              ))}
+            </select>
+            <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none">
+              <svg className="w-4 h-4 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+              </svg>
+            </div>
+          </div>
+        </div>
+
         {/* Store Search */}
         <div className="relative">
           <label className="block text-sm font-medium text-slate-700 mb-2">
