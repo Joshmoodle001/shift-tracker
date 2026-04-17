@@ -6,8 +6,8 @@ import { DashboardStats } from '@/components/dashboard-stats';
 import { Filters } from '@/components/filters';
 import { RepProgressTable } from '@/components/rep-progress-table';
 import { StoreDetailTable } from '@/components/store-detail-table';
-import { RepProgress, StoreData } from '@/lib/types';
-import { parseRouteList, parseSignedShifts, mergeData, getUniqueReps, getUniqueStores, RawEmployee } from '@/lib/data-processing';
+import { RepProgress, StoreData, EmployeeDetail } from '@/lib/types';
+import { parseRouteList, parseSignedShifts, mergeData, getUniqueReps, getUniqueStores, RawEmployee, RawSignedShift } from '@/lib/data-processing';
 import { ClipboardCheck, RefreshCw, Upload as UploadIcon } from 'lucide-react';
 
 const STORAGE_KEY = 'shift-tracker-data';
@@ -17,6 +17,7 @@ interface PersistedData {
   reps: string[];
   storeNames: string[];
   employees: RawEmployee[];
+  employeeDetails: EmployeeDetail[];
   timestamp: string;
 }
 
@@ -50,6 +51,7 @@ export default function Home() {
   const [signedShiftsFile, setSignedShiftsFile] = useState<File | null>(null);
   const [error, setError] = useState('');
   const [employees, setEmployees] = useState<RawEmployee[]>([]);
+  const [employeeDetails, setEmployeeDetails] = useState<EmployeeDetail[]>([]);
   const [initialized, setInitialized] = useState(false);
 
   useEffect(() => {
@@ -59,6 +61,7 @@ export default function Home() {
       setReps(persisted.reps);
       setStoreNames(persisted.storeNames);
       setEmployees(persisted.employees);
+      setEmployeeDetails(persisted.employeeDetails || []);
       setLastUpdated(new Date(persisted.timestamp).toLocaleString());
     }
     setInitialized(true);
@@ -83,6 +86,22 @@ export default function Home() {
     }
 
     return stores;
+  }, []);
+
+  const buildEmployeeDetails = useCallback((emps: RawEmployee[], signedShifts: RawSignedShift[]): EmployeeDetail[] => {
+    return emps.map(emp => {
+      const signed = signedShifts.find(s => s['Employee Code'] === emp['Employee Code']);
+      return {
+        employee_code: emp['Employee Code'],
+        first_name: emp['First Name'],
+        last_name: emp['Last Name'],
+        store: emp.Store,
+        rep: emp.Rep,
+        job_title: emp['Job Title'],
+        employee_status: emp['Employee Status'],
+        signed: signed?.Status === 'Signed'
+      };
+    });
   }, []);
 
   const processFiles = useCallback(async (routeFile: File | null, signedFile: File | null) => {
@@ -111,11 +130,13 @@ export default function Home() {
       }
 
       const stores = buildStoreData(emps, signedShifts);
+      const details = buildEmployeeDetails(emps, signedShifts);
       const uniqueReps = getUniqueReps(emps);
       const uniqueStoreNames = getUniqueStores(emps);
       const timestamp = new Date().toISOString();
 
       setStoreData(stores);
+      setEmployeeDetails(details);
       setReps(uniqueReps);
       setStoreNames(uniqueStoreNames);
       setLastUpdated(new Date(timestamp).toLocaleString());
@@ -125,6 +146,7 @@ export default function Home() {
         reps: uniqueReps,
         storeNames: uniqueStoreNames,
         employees: emps,
+        employeeDetails: details,
         timestamp
       });
     } catch (err) {
@@ -132,7 +154,7 @@ export default function Home() {
     } finally {
       setIsProcessing(false);
     }
-  }, [employees, buildStoreData]);
+  }, [employees, buildStoreData, buildEmployeeDetails]);
 
   const filteredData = storeData
     .filter(d => !selectedStore || d.store.toLowerCase().includes(selectedStore.toLowerCase()))
@@ -196,6 +218,7 @@ export default function Home() {
                     setReps([]);
                     setStoreNames([]);
                     setEmployees([]);
+                    setEmployeeDetails([]);
                     setSelectedStore('');
                     setSelectedRep('');
                     setLastUpdated('');
@@ -323,7 +346,7 @@ export default function Home() {
             </div>
 
             <div className="mb-6">
-              <RepProgressTable data={repProgress} />
+              <RepProgressTable data={repProgress} employeeDetails={employeeDetails} />
             </div>
 
             <div className="mb-6">

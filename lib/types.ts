@@ -38,6 +38,17 @@ export interface StoreData {
   not_signed_count: number;
 }
 
+export interface EmployeeDetail {
+  employee_code: string;
+  first_name: string;
+  last_name: string;
+  store: string;
+  rep: string;
+  job_title: string;
+  employee_status: string;
+  signed: boolean;
+}
+
 export function filterByStore(data: StoreData[], searchTerm: string): StoreData[] {
   if (!searchTerm) return data;
   const term = searchTerm.toLowerCase();
