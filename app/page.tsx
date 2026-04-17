@@ -479,10 +479,6 @@ export default function Home() {
             </div>
 
             <div className="mb-6">
-              <DashboardStats data={otherRepProgress} />
-            </div>
-
-            <div className="mb-6">
               <Filters
                 regions={regions}
                 stores={storeNames}
@@ -540,6 +536,10 @@ export default function Home() {
                 title="Rep -> Store -> Employee Hierarchy (Checkers/Shoprite)"
                 emptyMessage="No Checkers/Shoprite stores match the current filters."
               />
+            </div>
+
+            <div className="mb-6">
+              <DashboardStats data={otherRepProgress} />
             </div>
 
             <div className="mb-6">

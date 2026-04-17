@@ -30,7 +30,61 @@ function formatIdNumber(val: string | number | null | undefined): string {
 
 export function isCheckersOrShopriteStore(store: string): boolean {
   const upper = String(store || '').toUpperCase();
-  return CHECKERS_SHOPRITE_KEYWORDS.some(keyword => upper.includes(keyword));
+  if (!upper) return false;
+
+  // Fast-path for exact matches.
+  if (CHECKERS_SHOPRITE_KEYWORDS.some(keyword => upper.includes(keyword))) {
+    return true;
+  }
+
+  // Handle common data-entry typos such as "CHEKCERS".
+  const tokens = upper.split(/[^A-Z]+/).filter(Boolean);
+  const isNearMatch = (token: string, target: string): boolean => {
+    if (token === target) return true;
+    if (Math.abs(token.length - target.length) > 1) return false;
+
+    // Adjacent transposition (e.g. CHEKCERS vs CHECKERS).
+    if (token.length === target.length) {
+      for (let i = 0; i < token.length - 1; i++) {
+        if (
+          token[i] !== target[i] &&
+          token[i] === target[i + 1] &&
+          token[i + 1] === target[i]
+        ) {
+          const swapped = token.slice(0, i) + token[i + 1] + token[i] + token.slice(i + 2);
+          if (swapped === target) return true;
+        }
+      }
+    }
+
+    // One-edit-away check (insert/delete/replace) for noisy inputs.
+    let i = 0;
+    let j = 0;
+    let edits = 0;
+    while (i < token.length && j < target.length) {
+      if (token[i] === target[j]) {
+        i++;
+        j++;
+        continue;
+      }
+      edits++;
+      if (edits > 1) return false;
+      if (token.length > target.length) {
+        i++;
+      } else if (token.length < target.length) {
+        j++;
+      } else {
+        i++;
+        j++;
+      }
+    }
+    if (i < token.length || j < target.length) edits++;
+    return edits <= 1;
+  };
+
+  return tokens.some((token) =>
+    CHECKERS_SHOPRITE_KEYWORDS.some((brand) => isNearMatch(token, brand))
+  );
 }
 
 export function getRegionFromRep(rep: string): string {

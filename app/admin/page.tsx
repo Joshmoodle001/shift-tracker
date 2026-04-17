@@ -2,7 +2,7 @@
 
 import { useState, useCallback } from 'react';
 import { supabase } from '@/lib/supabase';
-import { parseRouteList, parseSignedShifts, RawEmployee, RawSignedShift } from '@/lib/data-processing';
+import { parseRouteList, parseSignedShifts, RawEmployee, RawSignedShift, isCheckersOrShopriteStore } from '@/lib/data-processing';
 import { FileUploader } from '@/components/file-uploader';
 import { Shield, RefreshCw, ArrowLeft, Upload, CheckCircle2, AlertTriangle, Trash2 } from 'lucide-react';
 import Link from 'next/link';
@@ -89,7 +89,7 @@ export default function AdminPage() {
 
         const uniqueStores = [...new Set(employees.map(e => e.Store))].length;
         const checkersOrShopriteStores = [...new Set(
-          employees.filter(e => /checkers|shoprite/i.test(e.Store)).map(e => e.Store)
+          employees.filter(e => isCheckersOrShopriteStore(e.Store)).map(e => e.Store)
         )].length;
         const otherStores = uniqueStores - checkersOrShopriteStores;
         const reassigned = employees.filter(e => e['Original Rep'] !== e.Rep).length;
