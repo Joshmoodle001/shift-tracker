@@ -8,9 +8,19 @@ interface HierarchyViewProps {
   repProgress: RepProgress[];
   storeData: StoreData[];
   employeeDetails: EmployeeDetail[];
+  title?: string;
+  subtitle?: string;
+  emptyMessage?: string;
 }
 
-export function HierarchyView({ repProgress, storeData, employeeDetails }: HierarchyViewProps) {
+export function HierarchyView({
+  repProgress,
+  storeData,
+  employeeDetails,
+  title = 'Rep -> Store -> Employee Hierarchy',
+  subtitle = 'Click to expand',
+  emptyMessage = 'No data available.',
+}: HierarchyViewProps) {
   const [expandedReps, setExpandedReps] = useState<Set<string>>(new Set());
   const [expandedStores, setExpandedStores] = useState<Set<string>>(new Set());
 
@@ -77,12 +87,12 @@ export function HierarchyView({ repProgress, storeData, employeeDetails }: Hiera
     <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
       <div className="px-6 py-4 border-b border-slate-200 flex items-center gap-2">
         <Users className="w-5 h-5 text-blue-600" />
-        <h3 className="font-semibold text-slate-900">Rep &rarr; Store &rarr; Employee Hierarchy</h3>
-        <span className="text-xs text-slate-500 ml-2">Click to expand</span>
+        <h3 className="font-semibold text-slate-900">{title}</h3>
+        <span className="text-xs text-slate-500 ml-2">{subtitle}</span>
       </div>
 
       {sortedReps.length === 0 && (
-        <div className="py-12 text-center text-slate-500">No data available.</div>
+        <div className="py-12 text-center text-slate-500">{emptyMessage}</div>
       )}
 
       <div className="divide-y divide-slate-200">

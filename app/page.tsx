@@ -1,13 +1,12 @@
 'use client';
 
 import { useState, useCallback, useEffect } from 'react';
-import { FileUploader } from '@/components/file-uploader';
 import { DashboardStats } from '@/components/dashboard-stats';
 import { Filters } from '@/components/filters';
 import { HierarchyView } from '@/components/hierarchy-view';
 import { RepProgress, StoreData, EmployeeDetail } from '@/lib/types';
 import { supabase } from '@/lib/supabase';
-import { buildSignedLookup } from '@/lib/data-processing';
+import { buildSignedLookup, isCheckersOrShopriteStore } from '@/lib/data-processing';
 import { ClipboardCheck, RefreshCw, Shield, Loader2 } from 'lucide-react';
 import Link from 'next/link';
 
@@ -32,6 +31,38 @@ interface DbSigned {
   id_number: string;
 }
 
+function normalizeEmployeeCode(code: string): string {
+  return String(code || '').replace(/\s+/g, '').toUpperCase();
+}
+
+function calculateRepProgress(data: StoreData[]): RepProgress[] {
+  const repMap = new Map<string, RepProgress>();
+  for (const d of data) {
+    const existing = repMap.get(d.rep);
+    if (existing) {
+      existing.total_stores += 1;
+      existing.signed += d.signed_count;
+      existing.not_signed += d.not_signed_count;
+    } else {
+      repMap.set(d.rep, {
+        rep: d.rep,
+        total_stores: 1,
+        signed: d.signed_count,
+        not_signed: d.not_signed_count,
+        progress: 0,
+      });
+    }
+  }
+
+  const results = Array.from(repMap.values());
+  for (const r of results) {
+    const total = r.signed + r.not_signed;
+    r.progress = total > 0 ? Math.round((r.signed / total) * 100) : 0;
+  }
+
+  return results;
+}
+
 export default function Home() {
   const [storeData, setStoreData] = useState<StoreData[]>([]);
   const [reps, setReps] = useState<string[]>([]);
@@ -43,7 +74,6 @@ export default function Home() {
   const [selectedEmployeeCode, setSelectedEmployeeCode] = useState('');
   const [isLoading, setIsLoading] = useState(true);
   const [lastUpdated, setLastUpdated] = useState('');
-  const [initialized, setInitialized] = useState(false);
 
   const loadData = useCallback(async () => {
     setIsLoading(true);
@@ -84,7 +114,7 @@ export default function Home() {
           'Employee Code': s.employee_code,
           'Employee Name': s.employee_name,
           'Store': s.store,
-          'Status': s.status,
+          'Status': String(s.status || '').trim().toUpperCase() === 'SIGNED' ? 'Signed' : 'Not Signed',
           'Employee ID': s.id_number,
         }))
       );
@@ -98,14 +128,14 @@ export default function Home() {
         original_rep: e.original_rep || e.rep,
         job_title: e.job_title,
         employee_status: e.employee_status,
-        signed: signedLookup.get(e.employee_code) ?? false,
+        signed: signedLookup.get(normalizeEmployeeCode(e.employee_code)) ?? false,
       }));
       setEmployeeDetails(details);
 
       const mergedMap = new Map<string, { signed: number; not_signed: number; codes: string[] }>();
       for (const e of employees) {
         const key = `${e.rep}||${e.store}`;
-        const isSigned = signedLookup.get(e.employee_code) ?? false;
+        const isSigned = signedLookup.get(normalizeEmployeeCode(e.employee_code)) ?? false;
         const existing = mergedMap.get(key);
         if (existing) {
           if (isSigned) existing.signed += 1; else existing.not_signed += 1;
@@ -151,7 +181,9 @@ export default function Home() {
   }, []);
 
   useEffect(() => {
-    loadData().then(() => setInitialized(true));
+    // Initial data hydration from Supabase on page load.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    loadData();
   }, [loadData]);
 
   const filteredData = storeData
@@ -159,39 +191,27 @@ export default function Home() {
     .filter(d => !selectedRep || d.rep === selectedRep)
     .filter(d => {
       if (!selectedEmployeeCode) return true;
-      return d.employee_codes.some(c => c.toLowerCase().includes(selectedEmployeeCode.toLowerCase()));
+      const selectedCode = normalizeEmployeeCode(selectedEmployeeCode);
+      return d.employee_codes.some(c => normalizeEmployeeCode(c).includes(selectedCode));
     });
 
   const filteredEmployeeDetails = employeeDetails
-    .filter(e => !selectedEmployeeCode || e.employee_code.toLowerCase().includes(selectedEmployeeCode.toLowerCase()));
+    .filter(e => {
+      if (!selectedEmployeeCode) return true;
+      const selectedCode = normalizeEmployeeCode(selectedEmployeeCode);
+      return normalizeEmployeeCode(e.employee_code).includes(selectedCode);
+    });
 
-  const repProgress: RepProgress[] = (() => {
-    const repMap = new Map<string, RepProgress>();
-    for (const d of filteredData) {
-      const existing = repMap.get(d.rep);
-      if (existing) {
-        existing.total_stores += 1;
-        existing.signed += d.signed_count;
-        existing.not_signed += d.not_signed_count;
-      } else {
-        repMap.set(d.rep, {
-          rep: d.rep,
-          total_stores: 1,
-          signed: d.signed_count,
-          not_signed: d.not_signed_count,
-          progress: 0,
-        });
-      }
-    }
-    const results = Array.from(repMap.values());
-    for (const r of results) {
-      const total = r.signed + r.not_signed;
-      r.progress = total > 0 ? Math.round((r.signed / total) * 100) : 0;
-    }
-    return results;
-  })();
+  const repProgress = calculateRepProgress(filteredData);
 
-  if (!initialized) return null;
+  const checkersStoreData = filteredData.filter(d => isCheckersOrShopriteStore(d.store));
+  const otherStoreData = filteredData.filter(d => !isCheckersOrShopriteStore(d.store));
+
+  const checkersEmployeeDetails = filteredEmployeeDetails.filter(e => isCheckersOrShopriteStore(e.store));
+  const otherEmployeeDetails = filteredEmployeeDetails.filter(e => !isCheckersOrShopriteStore(e.store));
+
+  const checkersRepProgress = calculateRepProgress(checkersStoreData);
+  const otherRepProgress = calculateRepProgress(otherStoreData);
 
   return (
     <div className="min-h-screen bg-slate-50">
@@ -278,9 +298,21 @@ export default function Home() {
 
             <div className="mb-6">
               <HierarchyView
-                repProgress={repProgress}
-                storeData={filteredData}
-                employeeDetails={filteredEmployeeDetails}
+                repProgress={checkersRepProgress}
+                storeData={checkersStoreData}
+                employeeDetails={checkersEmployeeDetails}
+                title="Rep -> Store -> Employee Hierarchy (Checkers/Shoprite)"
+                emptyMessage="No Checkers/Shoprite stores match the current filters."
+              />
+            </div>
+
+            <div className="mb-6">
+              <HierarchyView
+                repProgress={otherRepProgress}
+                storeData={otherStoreData}
+                employeeDetails={otherEmployeeDetails}
+                title="Rep -> Store -> Employee Hierarchy (Non-Checkers/Shoprite)"
+                emptyMessage="No non-Checkers/Shoprite stores match the current filters."
               />
             </div>
           </>

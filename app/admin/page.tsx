@@ -82,13 +82,20 @@ export default function AdminPage() {
         }
 
         if (employees.length === 0) {
-          setMessage({ type: 'error', text: 'No Checkers/Shoprite employees found in the route list.' });
+          setMessage({ type: 'error', text: 'No employees found in the route list.' });
           setIsProcessing(false);
           return;
         }
 
+        const uniqueStores = [...new Set(employees.map(e => e.Store))].length;
+        const checkersOrShopriteStores = [...new Set(
+          employees.filter(e => /checkers|shoprite/i.test(e.Store)).map(e => e.Store)
+        )].length;
+        const otherStores = uniqueStores - checkersOrShopriteStores;
         const reassigned = employees.filter(e => e['Original Rep'] !== e.Rep).length;
         const reassignedNote = reassigned > 0 ? ` (${reassigned} reassigned from general codes like HOLD/MATERNITY/ILL HEALTH)` : '';
+
+        console.log('Route list parsed:', employees.length, 'employees,', uniqueStores, 'unique stores');
 
         await deleteAll('shift_employees');
 
@@ -118,7 +125,10 @@ export default function AdminPage() {
         });
         if (uploadErr) console.warn('Upload log error:', uploadErr.message);
 
-        setMessage({ type: 'success', text: `Route list uploaded: ${employees.length} employees imported${reassignedNote}.` });
+        setMessage({
+          type: 'success',
+          text: `Route list uploaded: ${employees.length} employees, ${uniqueStores} unique stores (${checkersOrShopriteStores} Checkers/Shoprite, ${otherStores} other stores)${reassignedNote}.`,
+        });
       }
 
       if (signedFile) {
@@ -307,7 +317,7 @@ export default function AdminPage() {
                 currentFile={routeListFile?.name}
               />
               <p className="text-xs text-slate-500 mt-2">
-                Replaces all existing employee data. CHECKERS & SHOPRITE stores only.
+                Replaces all existing employee data. Includes Checkers/Shoprite and other stores.
               </p>
             </div>
             <div>

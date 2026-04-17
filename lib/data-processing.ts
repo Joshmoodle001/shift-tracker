@@ -1,21 +1,32 @@
 import * as XLSX from 'xlsx';
 
 const GENERAL_CODE_KEYWORDS = ['ILL HEALTH', 'HOLD LISTING', 'MATERNITY'];
+const CHECKERS_SHOPRITE_KEYWORDS = ['CHECKERS', 'SHOPRITE'];
 
 export function isGeneralCode(rep: string): boolean {
-  const upper = rep.toUpperCase();
+  const upper = String(rep || '').toUpperCase();
   return GENERAL_CODE_KEYWORDS.some(kw => upper.includes(kw));
 }
 
 function cleanCode(code: string): string {
-  return code.replace(/\s+/g, '').toUpperCase();
+  return String(code || '').replace(/\s+/g, '').toUpperCase();
+}
+
+function cleanStatus(status: string): 'Signed' | 'Not Signed' {
+  return String(status || '').trim().toUpperCase() === 'SIGNED' ? 'Signed' : 'Not Signed';
 }
 
 function formatIdNumber(val: string | number | null | undefined): string {
-  if (val == null || String(val) === 'nan' || String(val) === '') return '';
+  if (val == null) return '';
   const s = String(val).trim();
+  if (!s || s.toLowerCase() === 'nan') return '';
   if (s.endsWith('.0')) return s.slice(0, -2);
-  return s;
+  return s.replace(/\s+/g, '');
+}
+
+export function isCheckersOrShopriteStore(store: string): boolean {
+  const upper = String(store || '').toUpperCase();
+  return CHECKERS_SHOPRITE_KEYWORDS.some(keyword => upper.includes(keyword));
 }
 
 export interface RawEmployee {
@@ -35,72 +46,159 @@ export interface RawSignedShift {
   'Employee Code': string;
   'Employee Name': string;
   'Store': string;
-  'Status': string;
+  'Status': 'Signed' | 'Not Signed';
   'Employee ID': string;
 }
 
 export function reassignGeneralCodes(employees: RawEmployee[]): RawEmployee[] {
-  const storeToRealReps = new Map<string, string[]>();
+  const storeRepCounts = new Map<string, Map<string, number>>();
+  const storeIdToRep = new Map<string, string>();
+  const idToRepCounts = new Map<string, Map<string, number>>();
+
   for (const emp of employees) {
     if (!isGeneralCode(emp.Rep)) {
-      const existing = storeToRealReps.get(emp.Store);
-      if (existing) {
-        if (!existing.includes(emp.Rep)) existing.push(emp.Rep);
-      } else {
-        storeToRealReps.set(emp.Store, [emp.Rep]);
+      const normalizedStore = emp.Store.trim();
+      const normalizedRep = emp.Rep.trim();
+      const normalizedId = formatIdNumber(emp['ID Number']);
+
+      if (!storeRepCounts.has(normalizedStore)) {
+        storeRepCounts.set(normalizedStore, new Map<string, number>());
+      }
+      const storeCountMap = storeRepCounts.get(normalizedStore)!;
+      storeCountMap.set(normalizedRep, (storeCountMap.get(normalizedRep) || 0) + 1);
+
+      if (normalizedId) {
+        const storeIdKey = `${normalizedStore}||${normalizedId}`;
+        if (!storeIdToRep.has(storeIdKey)) {
+          storeIdToRep.set(storeIdKey, normalizedRep);
+        }
+
+        if (!idToRepCounts.has(normalizedId)) {
+          idToRepCounts.set(normalizedId, new Map<string, number>());
+        }
+        const idCountMap = idToRepCounts.get(normalizedId)!;
+        idCountMap.set(normalizedRep, (idCountMap.get(normalizedRep) || 0) + 1);
       }
     }
   }
 
-  return employees.map(emp => {
-    if (isGeneralCode(emp.Rep)) {
-      const realReps = storeToRealReps.get(emp.Store);
-      if (realReps && realReps.length > 0) {
-        return { ...emp, 'Original Rep': emp.Rep, Rep: realReps[0] };
+  const pickMostFrequentRep = (counts: Map<string, number>): string | null => {
+    let selected: string | null = null;
+    let max = -1;
+    for (const [rep, count] of counts.entries()) {
+      if (count > max) {
+        selected = rep;
+        max = count;
       }
     }
-    return { ...emp, 'Original Rep': emp.Rep };
+    return selected;
+  };
+
+  return employees.map(emp => {
+    const originalRep = emp.Rep;
+    if (isGeneralCode(emp.Rep)) {
+      const normalizedStore = emp.Store.trim();
+      const normalizedId = formatIdNumber(emp['ID Number']);
+
+      if (normalizedId) {
+        const storeIdKey = `${normalizedStore}||${normalizedId}`;
+        const repFromStoreAndId = storeIdToRep.get(storeIdKey);
+        if (repFromStoreAndId) {
+          return { ...emp, 'Original Rep': originalRep, Rep: repFromStoreAndId };
+        }
+
+        const idCounts = idToRepCounts.get(normalizedId);
+        if (idCounts) {
+          const bestById = pickMostFrequentRep(idCounts);
+          if (bestById) {
+            return { ...emp, 'Original Rep': originalRep, Rep: bestById };
+          }
+        }
+      }
+
+      const storeCounts = storeRepCounts.get(normalizedStore);
+      if (storeCounts) {
+        const bestStoreRep = pickMostFrequentRep(storeCounts);
+        if (bestStoreRep) {
+          return { ...emp, 'Original Rep': originalRep, Rep: bestStoreRep };
+        }
+      }
+    }
+    return { ...emp, 'Original Rep': originalRep };
   });
 }
 
 export function parseRouteList(fileBuffer: ArrayBuffer): RawEmployee[] {
   const workbook = XLSX.read(fileBuffer, { type: 'array', cellDates: true });
-  const sheetName = workbook.SheetNames[0];
-  const worksheet = workbook.Sheets[sheetName];
-  const data = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
+  const requiredHeaders = ['Employee Code', 'ID Number', 'Store', 'Rep'];
+  let data: unknown[][] | null = null;
+  let headerRowIndex = -1;
+  const headerIndexMap = new Map<string, number>();
 
-  const headerRowIndex = (data as unknown[][]).findIndex((row) =>
-    Array.isArray(row) && row.some((cell) => cell === 'Employee Code')
-  );
+  for (const sheetName of workbook.SheetNames) {
+    const worksheet = workbook.Sheets[sheetName];
+    const sheetData = XLSX.utils.sheet_to_json(worksheet, { header: 1, defval: '' }) as unknown[][];
+    const candidateHeaderRowIndex = sheetData.findIndex((row) =>
+      Array.isArray(row) &&
+      requiredHeaders.every((header) =>
+        row.some((cell) => String(cell).trim().toUpperCase() === header.toUpperCase())
+      )
+    );
 
-  if (headerRowIndex === -1) {
-    throw new Error('Could not find header row in Route List');
+    if (candidateHeaderRowIndex !== -1) {
+      data = sheetData;
+      headerRowIndex = candidateHeaderRowIndex;
+      const headerRow = sheetData[candidateHeaderRowIndex];
+      headerRow.forEach((header, index) => {
+        headerIndexMap.set(String(header).trim().toUpperCase(), index);
+      });
+      break;
+    }
   }
+
+  if (!data || headerRowIndex === -1) {
+    throw new Error('Could not find a valid header row in Route List');
+  }
+
+  const getIndex = (headerName: string): number => {
+    const idx = headerIndexMap.get(headerName.toUpperCase());
+    if (idx == null) throw new Error(`Missing required column "${headerName}" in Route List`);
+    return idx;
+  };
+
+  const codeIndex = getIndex('Employee Code');
+  const idIndex = getIndex('ID Number');
+  const companyIndex = headerIndexMap.get('COMPANY') ?? -1;
+  const jobTitleIndex = headerIndexMap.get('JOB TITLE') ?? -1;
+  const storeIndex = getIndex('Store');
+  const firstNameIndex = headerIndexMap.get('FIRST NAME') ?? -1;
+  const lastNameIndex = headerIndexMap.get('LAST NAME') ?? -1;
+  const employeeStatusIndex = headerIndexMap.get('EMPLOYEE STATUS') ?? -1;
+  const repIndex = getIndex('Rep');
 
   const employees: RawEmployee[] = [];
   for (let i = headerRowIndex + 1; i < data.length; i++) {
     const row = data[i] as (string | number | null | undefined)[];
-    if (row[0] && row[5] && row[14]) {
-      const store = String(row[5]);
-      const isCheckersOrShoprite = store.includes('CHECKERS') || store.includes('SHOPRITE');
 
-      if (isCheckersOrShoprite) {
-        const rawCode = String(row[0]);
-        const rawRep = String(row[14]);
-        employees.push({
-          'Employee Code': cleanCode(rawCode),
-          'First Name': String(row[7] || ''),
-          'Last Name': String(row[8] || ''),
-          'Store': store,
-          'Rep': rawRep,
-          'Original Rep': rawRep,
-          'Company': String(row[3] || ''),
-          'Job Title': String(row[4] || ''),
-          'Employee Status': String(row[10] || ''),
-          'ID Number': formatIdNumber(row[2]),
-        });
-      }
+    const code = cleanCode(String(row[codeIndex] || ''));
+    const store = String(row[storeIndex] || '').trim();
+    const rep = String(row[repIndex] || '').trim();
+    if (!code || !store || !rep) {
+      continue;
     }
+
+    employees.push({
+      'Employee Code': code,
+      'First Name': firstNameIndex >= 0 ? String(row[firstNameIndex] || '').trim() : '',
+      'Last Name': lastNameIndex >= 0 ? String(row[lastNameIndex] || '').trim() : '',
+      'Store': store,
+      'Rep': rep,
+      'Original Rep': rep,
+      'Company': companyIndex >= 0 ? String(row[companyIndex] || '').trim() : '',
+      'Job Title': jobTitleIndex >= 0 ? String(row[jobTitleIndex] || '').trim() : '',
+      'Employee Status': employeeStatusIndex >= 0 ? String(row[employeeStatusIndex] || '').trim() : '',
+      'ID Number': formatIdNumber(row[idIndex]),
+    });
   }
 
   return reassignGeneralCodes(employees);
@@ -108,52 +206,92 @@ export function parseRouteList(fileBuffer: ArrayBuffer): RawEmployee[] {
 
 export function parseSignedShifts(fileBuffer: ArrayBuffer): RawSignedShift[] {
   const workbook = XLSX.read(fileBuffer, { type: 'array', cellDates: true });
-  const sheetName = workbook.SheetNames[0];
-  const worksheet = workbook.Sheets[sheetName];
-  const data = XLSX.utils.sheet_to_json(worksheet);
+  const requiredHeaders = ['Employee Code', 'Employee Name', 'Store', 'Status', 'Employee ID'];
 
-  return (data as RawSignedShift[]).map(row => ({
-    'Employee Code': cleanCode(row['Employee Code'] || ''),
-    'Employee Name': row['Employee Name'] || '',
-    'Store': row['Store'] || '',
-    'Status': row['Status'] || 'Not Signed',
-    'Employee ID': formatIdNumber(row['Employee ID']),
-  }));
+  for (const sheetName of workbook.SheetNames) {
+    const worksheet = workbook.Sheets[sheetName];
+    const rows = XLSX.utils.sheet_to_json(worksheet, { header: 1, defval: '' }) as unknown[][];
+    const headerRowIndex = rows.findIndex((row) =>
+      Array.isArray(row) &&
+      requiredHeaders.every((header) =>
+        row.some((cell) => String(cell).trim().toUpperCase() === header.toUpperCase())
+      )
+    );
+
+    if (headerRowIndex === -1) continue;
+
+    const headerRow = rows[headerRowIndex];
+    const headerIndexMap = new Map<string, number>();
+    headerRow.forEach((header, index) => {
+      headerIndexMap.set(String(header).trim().toUpperCase(), index);
+    });
+
+    const getIndex = (headerName: string): number => {
+      const idx = headerIndexMap.get(headerName.toUpperCase());
+      if (idx == null) throw new Error(`Missing required column "${headerName}" in Signed Shifts`);
+      return idx;
+    };
+
+    const codeIndex = getIndex('Employee Code');
+    const nameIndex = getIndex('Employee Name');
+    const storeIndex = getIndex('Store');
+    const statusIndex = getIndex('Status');
+    const idIndex = getIndex('Employee ID');
+
+    const result: RawSignedShift[] = [];
+    for (let i = headerRowIndex + 1; i < rows.length; i++) {
+      const row = rows[i] as (string | number | null | undefined)[];
+      const employeeCode = cleanCode(String(row[codeIndex] || ''));
+      if (!employeeCode) continue;
+
+      result.push({
+        'Employee Code': employeeCode,
+        'Employee Name': String(row[nameIndex] || '').trim(),
+        'Store': String(row[storeIndex] || '').trim(),
+        'Status': cleanStatus(String(row[statusIndex] || '')),
+        'Employee ID': formatIdNumber(row[idIndex]),
+      });
+    }
+
+    return result;
+  }
+
+  throw new Error('Could not find a valid Signed Shifts sheet with required columns');
 }
 
 export function buildSignedLookup(employees: RawEmployee[], signedShifts: RawSignedShift[]): Map<string, boolean> {
   const codeLookup = new Map<string, boolean>();
   for (const s of signedShifts) {
-    codeLookup.set(s['Employee Code'], s.Status === 'Signed');
+    const normalizedCode = cleanCode(s['Employee Code']);
+    if (!normalizedCode) continue;
+    const isSigned = cleanStatus(s.Status) === 'Signed';
+    const existing = codeLookup.get(normalizedCode) || false;
+    codeLookup.set(normalizedCode, existing || isSigned);
   }
 
   const idLookup = new Map<string, boolean>();
   for (const s of signedShifts) {
-    if (s['Employee ID']) {
-      idLookup.set(s['Employee ID'], s.Status === 'Signed');
-    }
-  }
-
-  const routeIdToCode = new Map<string, string>();
-  for (const e of employees) {
-    if (e['ID Number']) {
-      routeIdToCode.set(e['ID Number'], e['Employee Code']);
+    const normalizedId = formatIdNumber(s['Employee ID']);
+    if (normalizedId) {
+      const isSigned = cleanStatus(s.Status) === 'Signed';
+      const existing = idLookup.get(normalizedId) || false;
+      idLookup.set(normalizedId, existing || isSigned);
     }
   }
 
   const result = new Map<string, boolean>();
 
   for (const emp of employees) {
-    const code = emp['Employee Code'];
+    const code = cleanCode(emp['Employee Code']);
+    const normalizedEmpId = formatIdNumber(emp['ID Number']);
 
     if (codeLookup.has(code)) {
       result.set(code, codeLookup.get(code)!);
       continue;
     }
 
-    const idNum = emp['ID Number'];
-    if (idNum && idLookup.has(idNum)) {
-      result.set(code, idLookup.get(idNum)!);
+    if (normalizedEmpId && idLookup.has(normalizedEmpId)) {
+      result.set(code, idLookup.get(normalizedEmpId)!);
       continue;
     }
 
