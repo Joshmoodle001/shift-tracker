@@ -18,27 +18,27 @@ export interface RawSignedShift {
   'Status': string;
 }
 
-export async function parseRouteList(fileBuffer: ArrayBuffer): Promise<RawEmployee[]> {
+export function parseRouteList(fileBuffer: ArrayBuffer): RawEmployee[] {
   const workbook = XLSX.read(fileBuffer, { type: 'array', cellDates: true });
   const sheetName = workbook.SheetNames[0];
   const worksheet = workbook.Sheets[sheetName];
   const data = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
-  
-  const headerRowIndex = data.findIndex((row: unknown) => 
-    Array.isArray(row) && row.some((cell: unknown) => cell === 'Employee Code')
+
+  const headerRowIndex = (data as unknown[][]).findIndex((row) =>
+    Array.isArray(row) && row.some((cell) => cell === 'Employee Code')
   );
-  
+
   if (headerRowIndex === -1) {
     throw new Error('Could not find header row in Route List');
   }
-  
+
   const employees: RawEmployee[] = [];
   for (let i = headerRowIndex + 1; i < data.length; i++) {
     const row = data[i] as (string | number | null | undefined)[];
     if (row[0] && row[5] && row[14]) {
       const store = String(row[5]);
       const isCheckersOrShoprite = store.includes('CHECKERS') || store.includes('SHOPRITE');
-      
+
       if (isCheckersOrShoprite) {
         employees.push({
           'Employee Code': String(row[0]),
@@ -53,16 +53,16 @@ export async function parseRouteList(fileBuffer: ArrayBuffer): Promise<RawEmploy
       }
     }
   }
-  
+
   return employees;
 }
 
-export async function parseSignedShifts(fileBuffer: ArrayBuffer): Promise<RawSignedShift[]> {
+export function parseSignedShifts(fileBuffer: ArrayBuffer): RawSignedShift[] {
   const workbook = XLSX.read(fileBuffer, { type: 'array', cellDates: true });
   const sheetName = workbook.SheetNames[0];
   const worksheet = workbook.Sheets[sheetName];
   const data = XLSX.utils.sheet_to_json(worksheet);
-  
+
   return (data as RawSignedShift[]).map(row => ({
     'Employee Code': row['Employee Code'] || '',
     'Employee Name': row['Employee Name'] || '',
@@ -76,15 +76,15 @@ export function mergeData(
   signedShifts: RawSignedShift[]
 ): Map<string, { signed: number; not_signed: number }> {
   const result = new Map<string, { signed: number; not_signed: number }>();
-  
+
   for (const emp of employees) {
     const key = `${emp.Rep}||${emp.Store}`;
     const signedShift = signedShifts.find(
       s => s['Employee Code'] === emp['Employee Code']
     );
-    
+
     const isSigned = signedShift?.Status === 'Signed';
-    
+
     const existing = result.get(key);
     if (existing) {
       if (isSigned) {
@@ -99,7 +99,7 @@ export function mergeData(
       });
     }
   }
-  
+
   return result;
 }
 

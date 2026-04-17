@@ -1,13 +1,42 @@
 'use client';
 
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { FileUploader } from '@/components/file-uploader';
 import { DashboardStats } from '@/components/dashboard-stats';
 import { Filters } from '@/components/filters';
 import { RepProgressTable } from '@/components/rep-progress-table';
 import { StoreDetailTable } from '@/components/store-detail-table';
 import { RepProgress, StoreData } from '@/lib/types';
+import { parseRouteList, parseSignedShifts, mergeData, getUniqueReps, getUniqueStores, RawEmployee } from '@/lib/data-processing';
 import { ClipboardCheck, RefreshCw, Upload as UploadIcon } from 'lucide-react';
+
+const STORAGE_KEY = 'shift-tracker-data';
+
+interface PersistedData {
+  stores: StoreData[];
+  reps: string[];
+  storeNames: string[];
+  employees: RawEmployee[];
+  timestamp: string;
+}
+
+function loadPersistedData(): PersistedData | null {
+  if (typeof window === 'undefined') return null;
+  const stored = localStorage.getItem(STORAGE_KEY);
+  if (stored) {
+    try {
+      return JSON.parse(stored);
+    } catch {
+      return null;
+    }
+  }
+  return null;
+}
+
+function savePersistedData(data: PersistedData) {
+  if (typeof window === 'undefined') return;
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+}
 
 export default function Home() {
   const [storeData, setStoreData] = useState<StoreData[]>([]);
@@ -20,38 +49,90 @@ export default function Home() {
   const [routeListFile, setRouteListFile] = useState<File | null>(null);
   const [signedShiftsFile, setSignedShiftsFile] = useState<File | null>(null);
   const [error, setError] = useState('');
+  const [employees, setEmployees] = useState<RawEmployee[]>([]);
+  const [initialized, setInitialized] = useState(false);
 
-  const processFiles = useCallback(async (routeFile: File | null, signedFile: File | null, keepExisting = false) => {
+  useEffect(() => {
+    const persisted = loadPersistedData();
+    if (persisted) {
+      setStoreData(persisted.stores);
+      setReps(persisted.reps);
+      setStoreNames(persisted.storeNames);
+      setEmployees(persisted.employees);
+      setLastUpdated(new Date(persisted.timestamp).toLocaleString());
+    }
+    setInitialized(true);
+  }, []);
+
+  const buildStoreData = useCallback((emps: RawEmployee[], signedShifts: Awaited<ReturnType<typeof parseSignedShifts>>) => {
+    const merged = mergeData(emps, signedShifts);
+    const stores: StoreData[] = [];
+
+    for (const [key, counts] of merged.entries()) {
+      const [rep, store] = key.split('||');
+      const empCodes = emps
+        .filter(e => e.Rep === rep && e.Store === store)
+        .map(e => e['Employee Code']);
+      stores.push({
+        store,
+        rep,
+        employee_codes: empCodes,
+        signed_count: counts.signed,
+        not_signed_count: counts.not_signed
+      });
+    }
+
+    return stores;
+  }, []);
+
+  const processFiles = useCallback(async (routeFile: File | null, signedFile: File | null) => {
     setIsProcessing(true);
     setError('');
 
-    const formData = new FormData();
-    if (routeFile) formData.append('routeList', routeFile);
-    if (signedFile) formData.append('signedShifts', signedFile);
-    if (keepExisting) formData.append('keepExisting', 'true');
-
     try {
-      const response = await fetch('/api/process', {
-        method: 'POST',
-        body: formData
-      });
+      let emps = employees;
 
-      if (!response.ok) {
-        const err = await response.json();
-        throw new Error(err.error || 'Failed to process files');
+      if (routeFile) {
+        const buffer = await routeFile.arrayBuffer();
+        emps = parseRouteList(buffer);
+        setEmployees(emps);
       }
 
-      const data = await response.json();
-      setStoreData(data.stores);
-      setReps(data.reps);
-      setStoreNames(data.storeNames);
-      setLastUpdated(new Date(data.timestamp).toLocaleString());
+      if (emps.length === 0) {
+        setError('No Checkers/Shoprite employees found. Upload the Route List first.');
+        setIsProcessing(false);
+        return;
+      }
+
+      let signedShifts: Awaited<ReturnType<typeof parseSignedShifts>> = [];
+      if (signedFile) {
+        const buffer = await signedFile.arrayBuffer();
+        signedShifts = parseSignedShifts(buffer);
+      }
+
+      const stores = buildStoreData(emps, signedShifts);
+      const uniqueReps = getUniqueReps(emps);
+      const uniqueStoreNames = getUniqueStores(emps);
+      const timestamp = new Date().toISOString();
+
+      setStoreData(stores);
+      setReps(uniqueReps);
+      setStoreNames(uniqueStoreNames);
+      setLastUpdated(new Date(timestamp).toLocaleString());
+
+      savePersistedData({
+        stores,
+        reps: uniqueReps,
+        storeNames: uniqueStoreNames,
+        employees: emps,
+        timestamp
+      });
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to process files');
     } finally {
       setIsProcessing(false);
     }
-  }, []);
+  }, [employees, buildStoreData]);
 
   const filteredData = storeData
     .filter(d => !selectedStore || d.store.toLowerCase().includes(selectedStore.toLowerCase()))
@@ -83,9 +164,10 @@ export default function Home() {
     return results;
   })();
 
+  if (!initialized) return null;
+
   return (
     <div className="min-h-screen bg-slate-50">
-      {/* Header */}
       <header className="bg-white border-b border-slate-200 sticky top-0 z-50">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex items-center justify-between h-16">
@@ -100,33 +182,36 @@ export default function Home() {
             </div>
             <div className="flex items-center gap-4">
               {lastUpdated && (
-                <span className="text-xs text-slate-500">
+                <span className="text-xs text-slate-500 hidden sm:block">
                   Updated: {lastUpdated}
                 </span>
               )}
-              <button
-                onClick={() => {
-                  setRouteListFile(null);
-                  setSignedShiftsFile(null);
-                  setStoreData([]);
-                  setReps([]);
-                  setStoreNames([]);
-                  setSelectedStore('');
-                  setSelectedRep('');
-                  setLastUpdated('');
-                  setError('');
-                }}
-                className="text-sm text-slate-600 hover:text-slate-800 px-3 py-1.5 rounded-lg hover:bg-slate-100"
-              >
-                Reset
-              </button>
+              {storeData.length > 0 && (
+                <button
+                  onClick={() => {
+                    localStorage.removeItem(STORAGE_KEY);
+                    setRouteListFile(null);
+                    setSignedShiftsFile(null);
+                    setStoreData([]);
+                    setReps([]);
+                    setStoreNames([]);
+                    setEmployees([]);
+                    setSelectedStore('');
+                    setSelectedRep('');
+                    setLastUpdated('');
+                    setError('');
+                  }}
+                  className="text-sm text-slate-600 hover:text-slate-800 px-3 py-1.5 rounded-lg hover:bg-slate-100"
+                >
+                  Reset
+                </button>
+              )}
             </div>
           </div>
         </div>
       </header>
 
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        {/* Upload Section - shown when no data */}
         {storeData.length === 0 && (
           <div className="mb-8">
             <div className="bg-white rounded-xl border border-slate-200 p-6 shadow-sm">
@@ -194,7 +279,6 @@ export default function Home() {
           </div>
         )}
 
-        {/* Upload New Signed Docs - shown when data is loaded */}
         {storeData.length > 0 && (
           <div className="mb-6">
             <div className="bg-white rounded-xl border border-slate-200 p-4 shadow-sm">
@@ -207,7 +291,7 @@ export default function Home() {
                   <FileUploader
                     onUpload={async (file) => {
                       setSignedShiftsFile(file);
-                      await processFiles(null, file, true);
+                      await processFiles(null, file);
                     }}
                     label="Upload new signed shifts Excel"
                     currentFile={signedShiftsFile?.name}
@@ -221,7 +305,6 @@ export default function Home() {
           </div>
         )}
 
-        {/* Dashboard */}
         {storeData.length > 0 && (
           <>
             <div className="mb-6">
