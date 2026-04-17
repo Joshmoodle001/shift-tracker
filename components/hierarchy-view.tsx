@@ -1,7 +1,7 @@
 'use client';
 
 import { RepProgress, StoreData, EmployeeDetail } from '@/lib/types';
-import { ChevronRight, CheckCircle2, XCircle, User, Store, Users } from 'lucide-react';
+import { ChevronRight, CheckCircle2, XCircle, User, Store, Users, ArrowRight } from 'lucide-react';
 import { useState } from 'react';
 
 interface HierarchyViewProps {
@@ -176,6 +176,11 @@ export function HierarchyView({ repProgress, storeData, employeeDetails }: Hiera
                                       </p>
                                       <p className="text-[11px] text-slate-500 truncate">
                                         {emp.employee_code} &middot; {emp.job_title}
+                                        {emp.original_rep !== emp.rep && (
+                                          <span className="text-amber-600 ml-1">
+                                            <ArrowRight className="w-2.5 h-2.5 inline" /> from {emp.original_rep}
+                                          </span>
+                                        )}
                                       </p>
                                     </div>
                                   </div>
@@ -202,6 +207,11 @@ export function HierarchyView({ repProgress, storeData, employeeDetails }: Hiera
                                       </p>
                                       <p className="text-[11px] text-slate-500 truncate">
                                         {emp.employee_code} &middot; {emp.job_title}
+                                        {emp.original_rep !== emp.rep && (
+                                          <span className="text-amber-600 ml-1">
+                                            <ArrowRight className="w-2.5 h-2.5 inline" /> from {emp.original_rep}
+                                          </span>
+                                        )}
                                       </p>
                                     </div>
                                   </div>

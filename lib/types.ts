@@ -44,6 +44,7 @@ export interface EmployeeDetail {
   last_name: string;
   store: string;
   rep: string;
+  original_rep: string;
   job_title: string;
   employee_status: string;
   signed: boolean;

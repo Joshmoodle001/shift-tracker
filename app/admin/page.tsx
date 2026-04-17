@@ -78,6 +78,9 @@ export default function AdminPage() {
           return;
         }
 
+        const reassigned = employees.filter(e => e['Original Rep'] !== e.Rep).length;
+        const reassignedNote = reassigned > 0 ? ` (${reassigned} reassigned from general codes like HOLD/MATERNITY/ILL HEALTH)` : '';
+
         const { error: delErr } = await supabase.from('shift_employees').delete().neq('id', 0);
         if (delErr) throw new Error('Failed to clear existing employees: ' + delErr.message);
 
@@ -87,6 +90,7 @@ export default function AdminPage() {
           last_name: e['Last Name'],
           store: e.Store,
           rep: e.Rep,
+          original_rep: e['Original Rep'] || e.Rep,
           company: e.Company,
           job_title: e['Job Title'],
           employee_status: e['Employee Status'],
@@ -105,7 +109,7 @@ export default function AdminPage() {
         });
         if (uploadErr) console.warn('Upload log error:', uploadErr.message);
 
-        setMessage({ type: 'success', text: `Route list uploaded: ${employees.length} employees imported.` });
+        setMessage({ type: 'success', text: `Route list uploaded: ${employees.length} employees imported${reassignedNote}.` });
       }
 
       if (signedFile) {

@@ -16,6 +16,7 @@ interface DbEmployee {
   last_name: string;
   store: string;
   rep: string;
+  original_rep: string;
   company: string;
   job_title: string;
   employee_status: string;
@@ -71,6 +72,7 @@ export default function Home() {
         last_name: e.last_name,
         store: e.store,
         rep: e.rep,
+        original_rep: e.original_rep || e.rep,
         job_title: e.job_title,
         employee_status: e.employee_status,
         signed: signedMap.get(e.employee_code) ?? false,

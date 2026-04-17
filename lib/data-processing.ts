@@ -1,11 +1,19 @@
 import * as XLSX from 'xlsx';
 
+const GENERAL_CODE_KEYWORDS = ['ILL HEALTH', 'HOLD LISTING', 'MATERNITY'];
+
+export function isGeneralCode(rep: string): boolean {
+  const upper = rep.toUpperCase();
+  return GENERAL_CODE_KEYWORDS.some(kw => upper.includes(kw));
+}
+
 export interface RawEmployee {
   'Employee Code': string;
   'First Name': string;
   'Last Name': string;
   'Store': string;
   'Rep': string;
+  'Original Rep': string;
   'Company': string;
   'Job Title': string;
   'Employee Status': string;
@@ -16,6 +24,30 @@ export interface RawSignedShift {
   'Employee Name': string;
   'Store': string;
   'Status': string;
+}
+
+export function reassignGeneralCodes(employees: RawEmployee[]): RawEmployee[] {
+  const storeToRealReps = new Map<string, string[]>();
+  for (const emp of employees) {
+    if (!isGeneralCode(emp.Rep)) {
+      const existing = storeToRealReps.get(emp.Store);
+      if (existing) {
+        if (!existing.includes(emp.Rep)) existing.push(emp.Rep);
+      } else {
+        storeToRealReps.set(emp.Store, [emp.Rep]);
+      }
+    }
+  }
+
+  return employees.map(emp => {
+    if (isGeneralCode(emp.Rep)) {
+      const realReps = storeToRealReps.get(emp.Store);
+      if (realReps && realReps.length > 0) {
+        return { ...emp, 'Original Rep': emp.Rep, Rep: realReps[0] };
+      }
+    }
+    return { ...emp, 'Original Rep': emp.Rep };
+  });
 }
 
 export function parseRouteList(fileBuffer: ArrayBuffer): RawEmployee[] {
@@ -46,6 +78,7 @@ export function parseRouteList(fileBuffer: ArrayBuffer): RawEmployee[] {
           'Last Name': String(row[8] || ''),
           'Store': store,
           'Rep': String(row[14]),
+          'Original Rep': String(row[14]),
           'Company': String(row[3] || ''),
           'Job Title': String(row[4] || ''),
           'Employee Status': String(row[10] || '')
@@ -54,7 +87,7 @@ export function parseRouteList(fileBuffer: ArrayBuffer): RawEmployee[] {
     }
   }
 
-  return employees;
+  return reassignGeneralCodes(employees);
 }
 
 export function parseSignedShifts(fileBuffer: ArrayBuffer): RawSignedShift[] {
