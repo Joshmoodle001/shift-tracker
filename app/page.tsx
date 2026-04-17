@@ -33,9 +33,11 @@ export default function Home() {
   const [storeData, setStoreData] = useState<StoreData[]>([]);
   const [reps, setReps] = useState<string[]>([]);
   const [storeNames, setStoreNames] = useState<string[]>([]);
+  const [employeeCodes, setEmployeeCodes] = useState<string[]>([]);
   const [employeeDetails, setEmployeeDetails] = useState<EmployeeDetail[]>([]);
   const [selectedStore, setSelectedStore] = useState('');
   const [selectedRep, setSelectedRep] = useState('');
+  const [selectedEmployeeCode, setSelectedEmployeeCode] = useState('');
   const [isLoading, setIsLoading] = useState(true);
   const [lastUpdated, setLastUpdated] = useState('');
   const [initialized, setInitialized] = useState(false);
@@ -56,6 +58,7 @@ export default function Home() {
         setStoreData([]);
         setReps([]);
         setStoreNames([]);
+        setEmployeeCodes([]);
         setEmployeeDetails([]);
         setIsLoading(false);
         return;
@@ -110,10 +113,12 @@ export default function Home() {
 
       const uniqueReps = [...new Set(employees.map(e => e.rep))].sort();
       const uniqueStores = [...new Set(employees.map(e => e.store))].sort();
+      const uniqueCodes = [...new Set(employees.map(e => e.employee_code))].sort();
 
       setStoreData(stores);
       setReps(uniqueReps);
       setStoreNames(uniqueStores);
+      setEmployeeCodes(uniqueCodes);
 
       if (uploadRes.data && uploadRes.data.length > 0) {
         setLastUpdated(new Date(uploadRes.data[0].created_at).toLocaleString());
@@ -131,7 +136,14 @@ export default function Home() {
 
   const filteredData = storeData
     .filter(d => !selectedStore || d.store.toLowerCase().includes(selectedStore.toLowerCase()))
-    .filter(d => !selectedRep || d.rep === selectedRep);
+    .filter(d => !selectedRep || d.rep === selectedRep)
+    .filter(d => {
+      if (!selectedEmployeeCode) return true;
+      return d.employee_codes.some(c => c.toLowerCase().includes(selectedEmployeeCode.toLowerCase()));
+    });
+
+  const filteredEmployeeDetails = employeeDetails
+    .filter(e => !selectedEmployeeCode || e.employee_code.toLowerCase().includes(selectedEmployeeCode.toLowerCase()));
 
   const repProgress: RepProgress[] = (() => {
     const repMap = new Map<string, RepProgress>();
@@ -234,10 +246,13 @@ export default function Home() {
               <Filters
                 stores={storeNames}
                 reps={reps}
+                employeeCodes={employeeCodes}
                 onStoreFilter={setSelectedStore}
                 onRepFilter={setSelectedRep}
+                onEmployeeCodeFilter={setSelectedEmployeeCode}
                 selectedStore={selectedStore}
                 selectedRep={selectedRep}
+                selectedEmployeeCode={selectedEmployeeCode}
               />
             </div>
 
@@ -245,7 +260,7 @@ export default function Home() {
               <HierarchyView
                 repProgress={repProgress}
                 storeData={filteredData}
-                employeeDetails={employeeDetails}
+                employeeDetails={filteredEmployeeDetails}
               />
             </div>
           </>

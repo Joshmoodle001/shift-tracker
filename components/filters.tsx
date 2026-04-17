@@ -1,40 +1,53 @@
 'use client';
 
 import { Search, X, Filter } from 'lucide-react';
-import { useState, useCallback } from 'react';
+import { useState } from 'react';
 
 interface FiltersProps {
   stores: string[];
   reps: string[];
+  employeeCodes: string[];
   onStoreFilter: (store: string) => void;
   onRepFilter: (rep: string) => void;
+  onEmployeeCodeFilter: (code: string) => void;
   selectedStore: string;
   selectedRep: string;
+  selectedEmployeeCode: string;
 }
 
 export function Filters({
   stores,
   reps,
+  employeeCodes,
   onStoreFilter,
   onRepFilter,
+  onEmployeeCodeFilter,
   selectedStore,
-  selectedRep
+  selectedRep,
+  selectedEmployeeCode
 }: FiltersProps) {
   const [storeSearch, setStoreSearch] = useState('');
   const [showStoreDropdown, setShowStoreDropdown] = useState(false);
-  const [showRepDropdown, setShowRepDropdown] = useState(false);
+  const [codeSearch, setCodeSearch] = useState('');
+  const [showCodeDropdown, setShowCodeDropdown] = useState(false);
 
   const filteredStores = storeSearch
     ? stores.filter(s => s.toLowerCase().includes(storeSearch.toLowerCase()))
     : stores;
 
+  const filteredCodes = codeSearch
+    ? employeeCodes.filter(c => c.toLowerCase().includes(codeSearch.toLowerCase()))
+    : employeeCodes.slice(0, 50);
+
   const clearFilters = () => {
     onStoreFilter('');
     onRepFilter('');
+    onEmployeeCodeFilter('');
     setStoreSearch('');
+    setCodeSearch('');
   };
 
-  const hasFilters = selectedStore || selectedRep;
+  const hasFilters = selectedStore || selectedRep || selectedEmployeeCode;
 
   return (
     <div className="bg-white rounded-xl border border-slate-200 p-4 shadow-sm">
@@ -51,7 +64,7 @@ export function Filters({
         )}
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         {/* Store Search */}
         <div className="relative">
           <label className="block text-sm font-medium text-slate-700 mb-2">
@@ -105,6 +118,60 @@ export function Filters({
           )}
         </div>
 
+        {/* Employee Code Search */}
+        <div className="relative">
+          <label className="block text-sm font-medium text-slate-700 mb-2">
+            Employee Code
+          </label>
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+            <input
+              type="text"
+              placeholder="Type employee code..."
+              value={codeSearch}
+              onChange={(e) => {
+                setCodeSearch(e.target.value);
+                setShowCodeDropdown(true);
+                onEmployeeCodeFilter(e.target.value);
+              }}
+              onFocus={() => setShowCodeDropdown(true)}
+              className="w-full pl-10 pr-4 py-2.5 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+            />
+            {selectedEmployeeCode && (
+              <button
+                onClick={() => {
+                  onEmployeeCodeFilter('');
+                  setCodeSearch('');
+                }}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            )}
+          </div>
+          {showCodeDropdown && codeSearch && (
+            <div className="absolute z-10 w-full mt-1 bg-white border border-slate-200 rounded-lg shadow-lg max-h-48 overflow-y-auto">
+              {filteredCodes.length > 0 ? (
+                filteredCodes.map(code => (
+                  <button
+                    key={code}
+                    onClick={() => {
+                      onEmployeeCodeFilter(code);
+                      setCodeSearch(code);
+                      setShowCodeDropdown(false);
+                    }}
+                    className="w-full text-left px-4 py-2 text-sm hover:bg-slate-50 border-b border-slate-100 last:border-0 font-mono"
+                  >
+                    {code}
+                  </button>
+                ))
+              ) : (
+                <div className="px-4 py-2 text-sm text-slate-500">No codes found</div>
+              )}
+            </div>
+          )}
+        </div>
+
         {/* Rep Filter */}
         <div className="relative">
           <label className="block text-sm font-medium text-slate-700 mb-2">
@@ -115,7 +182,6 @@ export function Filters({
               value={selectedRep}
               onChange={(e) => {
                 onRepFilter(e.target.value);
-                setShowRepDropdown(false);
               }}
               className="w-full px-4 py-2.5 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 appearance-none bg-white cursor-pointer"
             >
