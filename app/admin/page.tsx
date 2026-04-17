@@ -102,6 +102,7 @@ export default function AdminPage() {
           company: e.Company,
           job_title: e['Job Title'],
           employee_status: e['Employee Status'],
+          id_number: e['ID Number'] || '',
         }));
 
         for (let i = 0; i < rows.length; i += CHUNK) {
@@ -152,6 +153,7 @@ export default function AdminPage() {
           date: '',
           department: '',
           hours: 0,
+          id_number: s['Employee ID'] || '',
         }));
 
         for (let i = 0; i < rows.length; i += CHUNK) {

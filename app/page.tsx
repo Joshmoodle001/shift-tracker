@@ -7,6 +7,7 @@ import { Filters } from '@/components/filters';
 import { HierarchyView } from '@/components/hierarchy-view';
 import { RepProgress, StoreData, EmployeeDetail } from '@/lib/types';
 import { supabase } from '@/lib/supabase';
+import { buildSignedLookup } from '@/lib/data-processing';
 import { ClipboardCheck, RefreshCw, Shield, Loader2 } from 'lucide-react';
 import Link from 'next/link';
 
@@ -20,6 +21,7 @@ interface DbEmployee {
   company: string;
   job_title: string;
   employee_status: string;
+  id_number: string;
 }
 
 interface DbSigned {
@@ -27,6 +29,7 @@ interface DbSigned {
   employee_name: string;
   store: string;
   status: string;
+  id_number: string;
 }
 
 export default function Home() {
@@ -64,10 +67,27 @@ export default function Home() {
         return;
       }
 
-      const signedMap = new Map<string, boolean>();
-      for (const s of signed) {
-        signedMap.set(s.employee_code.toUpperCase(), s.status === 'Signed');
-      }
+      const signedLookup = buildSignedLookup(
+        employees.map(e => ({
+          'Employee Code': e.employee_code,
+          'First Name': e.first_name,
+          'Last Name': e.last_name,
+          'Store': e.store,
+          'Rep': e.rep,
+          'Original Rep': e.original_rep,
+          'Company': e.company,
+          'Job Title': e.job_title,
+          'Employee Status': e.employee_status,
+          'ID Number': e.id_number,
+        })),
+        signed.map(s => ({
+          'Employee Code': s.employee_code,
+          'Employee Name': s.employee_name,
+          'Store': s.store,
+          'Status': s.status,
+          'Employee ID': s.id_number,
+        }))
+      );
 
       const details: EmployeeDetail[] = employees.map(e => ({
         employee_code: e.employee_code,
@@ -78,14 +98,14 @@ export default function Home() {
         original_rep: e.original_rep || e.rep,
         job_title: e.job_title,
         employee_status: e.employee_status,
-        signed: signedMap.get(e.employee_code.toUpperCase()) ?? false,
+        signed: signedLookup.get(e.employee_code) ?? false,
       }));
       setEmployeeDetails(details);
 
       const mergedMap = new Map<string, { signed: number; not_signed: number; codes: string[] }>();
       for (const e of employees) {
         const key = `${e.rep}||${e.store}`;
-        const isSigned = signedMap.get(e.employee_code.toUpperCase()) ?? false;
+        const isSigned = signedLookup.get(e.employee_code) ?? false;
         const existing = mergedMap.get(key);
         if (existing) {
           if (isSigned) existing.signed += 1; else existing.not_signed += 1;
