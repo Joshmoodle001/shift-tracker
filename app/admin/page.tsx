@@ -8,6 +8,93 @@ import { Shield, RefreshCw, ArrowLeft, Upload, CheckCircle2, AlertTriangle, Tras
 import Link from 'next/link';
 
 const ADMIN_PASSCODE = '1234';
+const PAGE_SIZE = 1000;
+
+interface DbSignedRow {
+  employee_code: string;
+  employee_name: string;
+  store: string;
+  status: string;
+  submitted_by: string;
+  date: string;
+  department: string;
+  hours: number;
+  id_number: string;
+}
+
+function normalizeCode(code: string): string {
+  return String(code || '').replace(/\s+/g, '').toUpperCase();
+}
+
+function normalizeId(idNumber: string | number | null | undefined): string {
+  if (idNumber == null) return '';
+  const raw = String(idNumber).trim();
+  if (!raw || raw.toLowerCase() === 'nan') return '';
+  if (raw.endsWith('.0')) return raw.slice(0, -2);
+  return raw.replace(/\s+/g, '');
+}
+
+function normalizeSignedStatus(status: string): 'Signed' | 'Not Signed' {
+  return String(status || '').trim().toUpperCase() === 'SIGNED' ? 'Signed' : 'Not Signed';
+}
+
+function mergeSignedRows(existingRows: DbSignedRow[], incomingRows: RawSignedShift[]): DbSignedRow[] {
+  const merged = new Map<string, DbSignedRow>();
+
+  for (const row of existingRows) {
+    const key = normalizeCode(row.employee_code);
+    if (!key) continue;
+    merged.set(key, {
+      employee_code: key,
+      employee_name: String(row.employee_name || '').trim(),
+      store: String(row.store || '').trim(),
+      status: normalizeSignedStatus(row.status),
+      submitted_by: String(row.submitted_by || '').trim(),
+      date: String(row.date || '').trim(),
+      department: String(row.department || '').trim(),
+      hours: Number(row.hours || 0),
+      id_number: normalizeId(row.id_number),
+    });
+  }
+
+  for (const row of incomingRows) {
+    const key = normalizeCode(row['Employee Code']);
+    if (!key) continue;
+
+    const incomingStatus = normalizeSignedStatus(row.Status);
+    const incomingRow: DbSignedRow = {
+      employee_code: key,
+      employee_name: String(row['Employee Name'] || '').trim(),
+      store: String(row.Store || '').trim(),
+      status: incomingStatus,
+      submitted_by: '',
+      date: '',
+      department: '',
+      hours: 0,
+      id_number: normalizeId(row['Employee ID']),
+    };
+
+    const existing = merged.get(key);
+    if (!existing) {
+      merged.set(key, incomingRow);
+      continue;
+    }
+
+    merged.set(key, {
+      employee_code: key,
+      employee_name: incomingRow.employee_name || existing.employee_name,
+      store: incomingRow.store || existing.store,
+      status: existing.status === 'Signed' || incomingStatus === 'Signed' ? 'Signed' : 'Not Signed',
+      submitted_by: existing.submitted_by,
+      date: existing.date,
+      department: existing.department,
+      hours: existing.hours,
+      id_number: incomingRow.id_number || existing.id_number,
+    });
+  }
+
+  return Array.from(merged.values());
+}
 
 export default function AdminPage() {
   const [authenticated, setAuthenticated] = useState(false);
@@ -38,6 +125,24 @@ export default function AdminPage() {
       signed: signedRes.count || 0,
       uploads: uploadRes.count || 0,
     });
+  }, []);
+
+  const fetchAllRows = useCallback(async <T,>(table: string): Promise<T[]> => {
+    const rows: T[] = [];
+    let from = 0;
+
+    while (true) {
+      const to = from + PAGE_SIZE - 1;
+      const { data, error } = await supabase.from(table).select('*').range(from, to);
+      if (error) throw error;
+      if (!data || data.length === 0) break;
+
+      rows.push(...(data as T[]));
+      if (data.length < PAGE_SIZE) break;
+      from += PAGE_SIZE;
+    }
+
+    return rows;
   }, []);
 
   const handleLogin = () => {
@@ -152,19 +257,11 @@ export default function AdminPage() {
           return;
         }
 
-        await deleteAll('shift_signed');
+        const existingSigned = await fetchAllRows<DbSignedRow>('shift_signed');
+        const rows = mergeSignedRows(existingSigned, signedShifts);
+        const mergedSignedCount = rows.filter((r) => normalizeSignedStatus(r.status) === 'Signed').length;
 
-        const rows = signedShifts.map(s => ({
-          employee_code: s['Employee Code'],
-          employee_name: s['Employee Name'],
-          store: s.Store,
-          status: s.Status,
-          submitted_by: '',
-          date: '',
-          department: '',
-          hours: 0,
-          id_number: s['Employee ID'] || '',
-        }));
+        await deleteAll('shift_signed');
 
         for (let i = 0; i < rows.length; i += CHUNK) {
           const chunk = rows.slice(i, i + CHUNK);
@@ -178,7 +275,10 @@ export default function AdminPage() {
           record_count: signedShifts.length,
         });
 
-        setMessage({ type: 'success', text: `Signed shifts uploaded: ${signedShifts.length} records imported.` });
+        setMessage({
+          type: 'success',
+          text: `Signed shifts uploaded: ${signedShifts.length} records processed and merged. Total signed employees tracked: ${mergedSignedCount}.`,
+        });
       }
 
       await loadUploadHistory();
@@ -189,7 +289,7 @@ export default function AdminPage() {
     } finally {
       setIsProcessing(false);
     }
-  }, [loadUploadHistory]);
+  }, [fetchAllRows, loadUploadHistory]);
 
   const clearAllData = useCallback(async () => {
     if (!confirm('Are you sure you want to delete ALL data from the database?')) return;
@@ -309,7 +409,7 @@ export default function AdminPage() {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-2">
-                Route List (Store Universe) <span className="text-red-500">*</span>
+                Route List (Store Universe)
               </label>
               <FileUploader
                 onUpload={(file) => setRouteListFile(file)}
@@ -317,7 +417,7 @@ export default function AdminPage() {
                 currentFile={routeListFile?.name}
               />
               <p className="text-xs text-slate-500 mt-2">
-                Replaces all existing employee data. Includes Checkers/Shoprite and other stores.
+                Optional upload. Replaces all existing employee data. Includes Checkers/Shoprite and other stores.
               </p>
             </div>
             <div>
@@ -330,7 +430,7 @@ export default function AdminPage() {
                 currentFile={signedShiftsFile?.name}
               />
               <p className="text-xs text-slate-500 mt-2">
-                Replaces all existing signed shift data.
+                Optional upload. Merges with existing signed shift data so progress can increase across update files.
               </p>
             </div>
           </div>
