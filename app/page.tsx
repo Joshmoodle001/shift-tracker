@@ -6,7 +6,7 @@ import { Filters } from '@/components/filters';
 import { HierarchyView } from '@/components/hierarchy-view';
 import { RepProgress, StoreData, EmployeeDetail } from '@/lib/types';
 import { supabase } from '@/lib/supabase';
-import { buildSignedLookup, getRegionFromRep, isCheckersOrShopriteStore } from '@/lib/data-processing';
+import { buildSignedLookup, getRegionFromRep, isCheckersOrShopriteStore, isLearnerJobTitle } from '@/lib/data-processing';
 import { ClipboardCheck, RefreshCw, Shield, Loader2, FileSpreadsheet, FileText } from 'lucide-react';
 import Link from 'next/link';
 import * as XLSX from 'xlsx';
@@ -68,11 +68,13 @@ function calculateRepProgress(data: StoreData[]): RepProgress[] {
 
 export default function Home() {
   const [storeData, setStoreData] = useState<StoreData[]>([]);
+  const [learnerStoreData, setLearnerStoreData] = useState<StoreData[]>([]);
   const [regions, setRegions] = useState<string[]>([]);
   const [reps, setReps] = useState<string[]>([]);
   const [storeNames, setStoreNames] = useState<string[]>([]);
   const [employeeCodes, setEmployeeCodes] = useState<string[]>([]);
   const [employeeDetails, setEmployeeDetails] = useState<EmployeeDetail[]>([]);
+  const [learnerEmployeeDetails, setLearnerEmployeeDetails] = useState<EmployeeDetail[]>([]);
   const [selectedRegion, setSelectedRegion] = useState('');
   const [selectedStore, setSelectedStore] = useState('');
   const [selectedRep, setSelectedRep] = useState('');
@@ -109,11 +111,13 @@ export default function Home() {
 
       if (employees.length === 0) {
         setStoreData([]);
+        setLearnerStoreData([]);
         setRegions([]);
         setReps([]);
         setStoreNames([]);
         setEmployeeCodes([]);
         setEmployeeDetails([]);
+        setLearnerEmployeeDetails([]);
         setIsLoading(false);
         return;
       }
@@ -140,47 +144,62 @@ export default function Home() {
         }))
       );
 
-      const details: EmployeeDetail[] = employees.map(e => ({
-        employee_code: e.employee_code,
-        first_name: e.first_name,
-        last_name: e.last_name,
-        store: e.store,
-        rep: e.rep,
-        original_rep: e.original_rep || e.rep,
-        job_title: e.job_title,
-        employee_status: e.employee_status,
-        signed: signedLookup.get(normalizeEmployeeCode(e.employee_code)) ?? false,
-      }));
-      setEmployeeDetails(details);
+      const toEmployeeDetails = (rows: DbEmployee[]): EmployeeDetail[] =>
+        rows.map(e => ({
+          employee_code: e.employee_code,
+          first_name: e.first_name,
+          last_name: e.last_name,
+          store: e.store,
+          rep: e.rep,
+          original_rep: e.original_rep || e.rep,
+          job_title: e.job_title,
+          employee_status: e.employee_status,
+          signed: signedLookup.get(normalizeEmployeeCode(e.employee_code)) ?? false,
+        }));
 
-      const mergedMap = new Map<string, { signed: number; not_signed: number; codes: string[] }>();
-      for (const e of employees) {
-        const key = `${e.rep}||${e.store}`;
-        const isSigned = signedLookup.get(normalizeEmployeeCode(e.employee_code)) ?? false;
-        const existing = mergedMap.get(key);
-        if (existing) {
-          if (isSigned) existing.signed += 1; else existing.not_signed += 1;
-          existing.codes.push(e.employee_code);
-        } else {
-          mergedMap.set(key, {
-            signed: isSigned ? 1 : 0,
-            not_signed: isSigned ? 0 : 1,
-            codes: [e.employee_code],
+      const toStoreData = (rows: DbEmployee[]): StoreData[] => {
+        const mergedMap = new Map<string, { signed: number; not_signed: number; codes: string[] }>();
+
+        for (const e of rows) {
+          const key = `${e.rep}||${e.store}`;
+          const isSigned = signedLookup.get(normalizeEmployeeCode(e.employee_code)) ?? false;
+          const existing = mergedMap.get(key);
+          if (existing) {
+            if (isSigned) existing.signed += 1; else existing.not_signed += 1;
+            existing.codes.push(e.employee_code);
+          } else {
+            mergedMap.set(key, {
+              signed: isSigned ? 1 : 0,
+              not_signed: isSigned ? 0 : 1,
+              codes: [e.employee_code],
+            });
+          }
+        }
+
+        const stores: StoreData[] = [];
+        for (const [key, val] of mergedMap.entries()) {
+          const [rep, store] = key.split('||');
+          stores.push({
+            store,
+            rep,
+            employee_codes: val.codes,
+            signed_count: val.signed,
+            not_signed_count: val.not_signed,
           });
         }
-      }
+        return stores;
+      };
 
-      const stores: StoreData[] = [];
-      for (const [key, val] of mergedMap.entries()) {
-        const [rep, store] = key.split('||');
-        stores.push({
-          store,
-          rep,
-          employee_codes: val.codes,
-          signed_count: val.signed,
-          not_signed_count: val.not_signed,
-        });
-      }
+      const learnerEmployees = employees.filter(e => isLearnerJobTitle(e.job_title));
+      const nonLearnerEmployees = employees.filter(e => !isLearnerJobTitle(e.job_title));
+
+      const details = toEmployeeDetails(nonLearnerEmployees);
+      const learnerDetails = toEmployeeDetails(learnerEmployees);
+      setEmployeeDetails(details);
+      setLearnerEmployeeDetails(learnerDetails);
+
+      const stores = toStoreData(nonLearnerEmployees);
+      const learnerStores = toStoreData(learnerEmployees);
 
       const uniqueReps = [...new Set(employees.map(e => e.rep))].sort();
       const uniqueRegions = [...new Set(employees.map(e => getRegionFromRep(e.rep)))].sort();
@@ -188,6 +207,7 @@ export default function Home() {
       const uniqueCodes = [...new Set(employees.map(e => e.employee_code))].sort();
 
       setStoreData(stores);
+      setLearnerStoreData(learnerStores);
       setRegions(uniqueRegions);
       setReps(uniqueReps);
       setStoreNames(uniqueStores);
@@ -229,6 +249,22 @@ export default function Home() {
       const selectedCode = normalizeEmployeeCode(selectedEmployeeCode);
       return normalizeEmployeeCode(e.employee_code).includes(selectedCode);
     });
+  const learnerFilteredData = learnerStoreData
+    .filter(d => !selectedRegion || getRegionFromRep(d.rep) === selectedRegion)
+    .filter(d => !selectedStore || d.store.toLowerCase().includes(selectedStore.toLowerCase()))
+    .filter(d => !selectedRep || d.rep === selectedRep)
+    .filter(d => {
+      if (!selectedEmployeeCode) return true;
+      const selectedCode = normalizeEmployeeCode(selectedEmployeeCode);
+      return d.employee_codes.some(c => normalizeEmployeeCode(c).includes(selectedCode));
+    });
+
+  const learnerFilteredEmployeeDetails = learnerEmployeeDetails
+    .filter(e => {
+      if (!selectedEmployeeCode) return true;
+      const selectedCode = normalizeEmployeeCode(selectedEmployeeCode);
+      return normalizeEmployeeCode(e.employee_code).includes(selectedCode);
+    });
 
   const checkersStoreData = filteredData.filter(d => isCheckersOrShopriteStore(d.store));
   const otherStoreData = filteredData.filter(d => !isCheckersOrShopriteStore(d.store));
@@ -238,6 +274,7 @@ export default function Home() {
 
   const checkersRepProgress = calculateRepProgress(checkersStoreData);
   const otherRepProgress = calculateRepProgress(otherStoreData);
+  const learnerRepProgress = calculateRepProgress(learnerFilteredData);
 
   const canExport = Boolean(selectedRegion || selectedRep);
 
@@ -450,7 +487,7 @@ export default function Home() {
             <Loader2 className="w-8 h-8 text-blue-600 animate-spin mb-4" />
             <p className="text-slate-600">Loading data from database...</p>
           </div>
-        ) : storeData.length === 0 ? (
+        ) : (storeData.length === 0 && learnerStoreData.length === 0) ? (
           <div className="flex flex-col items-center justify-center py-24">
             <div className="p-4 bg-slate-100 rounded-full mb-4">
               <ClipboardCheck className="w-10 h-10 text-slate-400" />
@@ -549,6 +586,16 @@ export default function Home() {
                 employeeDetails={otherEmployeeDetails}
                 title="Non-Checkers/Shoprite Stores: Rep -> Store -> Employee Hierarchy"
                 emptyMessage="No non-Checkers/Shoprite stores match the current filters."
+              />
+            </div>
+
+            <div className="mb-6">
+              <HierarchyView
+                repProgress={learnerRepProgress}
+                storeData={learnerFilteredData}
+                employeeDetails={learnerFilteredEmployeeDetails}
+                title="Learners: Rep -> Store -> Employee Hierarchy"
+                emptyMessage="No learners match the current filters."
               />
             </div>
           </>

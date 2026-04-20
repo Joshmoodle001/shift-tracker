@@ -87,6 +87,12 @@ export function isCheckersOrShopriteStore(store: string): boolean {
   );
 }
 
+export function isLearnerJobTitle(jobTitle: string): boolean {
+  const title = String(jobTitle || '').toUpperCase();
+  if (!title) return false;
+  return /\bL01\s*-\s*LEARNER\b/.test(title) || /\bL01\s+LEARNER\b/.test(title);
+}
+
 export function getRegionFromRep(rep: string): string {
   const upper = String(rep || '').toUpperCase().trim();
   if (!upper) return 'UNASSIGNED';
