@@ -6,7 +6,7 @@ import { Filters } from '@/components/filters';
 import { HierarchyView } from '@/components/hierarchy-view';
 import { RepProgress, StoreData, EmployeeDetail } from '@/lib/types';
 import { supabase } from '@/lib/supabase';
-import { buildSignedLookup, getRegionFromRep, isCheckersOrShopriteStore, isLearnerJobTitle, isTerminatedEmployeeStatus } from '@/lib/data-processing';
+import { buildSignedLookup, getRegionFromRep, isCheckersOrShopriteStore, isLearnerJobTitle, isRepForcedToNonCheckers, isTerminatedEmployeeStatus } from '@/lib/data-processing';
 import { ClipboardCheck, RefreshCw, Shield, Loader2, FileSpreadsheet, FileText } from 'lucide-react';
 import Link from 'next/link';
 import * as XLSX from 'xlsx';
@@ -292,11 +292,19 @@ export default function Home() {
       return normalizeEmployeeCode(e.employee_code).includes(selectedCode);
     });
 
-  const checkersStoreData = filteredData.filter(d => isCheckersOrShopriteStore(d.store));
-  const otherStoreData = filteredData.filter(d => !isCheckersOrShopriteStore(d.store));
+  const checkersStoreData = filteredData.filter(
+    (d) => isCheckersOrShopriteStore(d.store) && !isRepForcedToNonCheckers(d.rep)
+  );
+  const otherStoreData = filteredData.filter(
+    (d) => !isCheckersOrShopriteStore(d.store) || isRepForcedToNonCheckers(d.rep)
+  );
 
-  const checkersEmployeeDetails = filteredEmployeeDetails.filter(e => isCheckersOrShopriteStore(e.store));
-  const otherEmployeeDetails = filteredEmployeeDetails.filter(e => !isCheckersOrShopriteStore(e.store));
+  const checkersEmployeeDetails = filteredEmployeeDetails.filter(
+    (e) => isCheckersOrShopriteStore(e.store) && !isRepForcedToNonCheckers(e.rep)
+  );
+  const otherEmployeeDetails = filteredEmployeeDetails.filter(
+    (e) => !isCheckersOrShopriteStore(e.store) || isRepForcedToNonCheckers(e.rep)
+  );
 
   const checkersRepProgress = calculateRepProgress(checkersStoreData);
   const otherRepProgress = calculateRepProgress(otherStoreData);

@@ -99,6 +99,12 @@ export function isTerminatedEmployeeStatus(employeeStatus: string): boolean {
   return status.includes('TERMINATED');
 }
 
+export function isRepForcedToNonCheckers(rep: string): boolean {
+  const normalizedRep = String(rep || '').trim().toUpperCase();
+  if (!normalizedRep) return false;
+  return normalizedRep.startsWith('W') || normalizedRep.startsWith('P');
+}
+
 export function getRegionFromRep(rep: string): string {
   const upper = String(rep || '').toUpperCase().trim();
   if (!upper) return 'UNASSIGNED';
