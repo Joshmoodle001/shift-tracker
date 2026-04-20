@@ -1,7 +1,7 @@
 'use client';
 
 import { RepProgress, StoreData, EmployeeDetail } from '@/lib/types';
-import { ChevronRight, CheckCircle2, XCircle, User, Store, Users, ArrowRight } from 'lucide-react';
+import { ChevronRight, CheckCircle2, XCircle, User, Store, Users, ArrowRight, UserX, Undo2 } from 'lucide-react';
 import { useState } from 'react';
 
 interface HierarchyViewProps {
@@ -11,6 +11,8 @@ interface HierarchyViewProps {
   title?: string;
   subtitle?: string;
   emptyMessage?: string;
+  onToggleExclude?: (employee: EmployeeDetail, shouldExclude: boolean) => void | Promise<void>;
+  excludeActionInFlightCodes?: Set<string>;
 }
 
 export function HierarchyView({
@@ -20,9 +22,14 @@ export function HierarchyView({
   title = 'Rep -> Store -> Employee Hierarchy',
   subtitle = 'Click to expand',
   emptyMessage = 'No data available.',
+  onToggleExclude,
+  excludeActionInFlightCodes,
 }: HierarchyViewProps) {
   const [expandedReps, setExpandedReps] = useState<Set<string>>(new Set());
   const [expandedStores, setExpandedStores] = useState<Set<string>>(new Set());
+  const pendingExcludeCodes = excludeActionInFlightCodes ?? new Set<string>();
+  const isPendingExclude = (code: string): boolean =>
+    pendingExcludeCodes.has(String(code || '').replace(/\s+/g, '').toUpperCase());
 
   const toggleRep = (rep: string) => {
     setExpandedReps(prev => {
@@ -136,8 +143,9 @@ export function HierarchyView({
                     const total = store.signed_count + store.not_signed_count;
                     const storePct = total > 0 ? Math.round((store.signed_count / total) * 100) : 0;
                     const emps = getEmployeesForStore(store.rep, store.store);
-                    const signedEmps = emps.filter(e => e.signed);
-                    const notSignedEmps = emps.filter(e => !e.signed);
+                    const signedEmps = emps.filter(e => e.signed && !e.excluded);
+                    const notSignedEmps = emps.filter(e => !e.signed && !e.excluded);
+                    const excludedEmps = emps.filter(e => e.excluded);
 
                     return (
                       <div key={storeKey} className={si > 0 ? 'border-t border-slate-200' : ''}>
@@ -171,7 +179,7 @@ export function HierarchyView({
                         {/* Expanded: Employees */}
                         {storeOpen && (
                           <div className="pl-6 sm:pl-20 pr-3 sm:pr-6 pb-3">
-                            <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+                            <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
                               {/* Signed */}
                               <div>
                                 <div className="flex items-center gap-1.5 mb-2">
@@ -196,6 +204,20 @@ export function HierarchyView({
                                           </span>
                                         )}
                                       </p>
+                                      {emp.exclude_eligible && onToggleExclude && (
+                                        <button
+                                          type="button"
+                                          disabled={isPendingExclude(emp.employee_code)}
+                                          onClick={(event) => {
+                                            event.stopPropagation();
+                                            onToggleExclude(emp, true);
+                                          }}
+                                          className="mt-1 inline-flex items-center gap-1 px-2 py-0.5 rounded border border-slate-300 text-[11px] text-slate-600 hover:bg-slate-100 disabled:opacity-50"
+                                        >
+                                          <UserX className="w-3 h-3" />
+                                          Exclude
+                                        </button>
+                                      )}
                                     </div>
                                   </div>
                                 )) : (
@@ -227,10 +249,69 @@ export function HierarchyView({
                                           </span>
                                         )}
                                       </p>
+                                      {emp.exclude_eligible && onToggleExclude && (
+                                        <button
+                                          type="button"
+                                          disabled={isPendingExclude(emp.employee_code)}
+                                          onClick={(event) => {
+                                            event.stopPropagation();
+                                            onToggleExclude(emp, true);
+                                          }}
+                                          className="mt-1 inline-flex items-center gap-1 px-2 py-0.5 rounded border border-slate-300 text-[11px] text-slate-600 hover:bg-slate-100 disabled:opacity-50"
+                                        >
+                                          <UserX className="w-3 h-3" />
+                                          Exclude
+                                        </button>
+                                      )}
                                     </div>
                                   </div>
                                 )) : (
                                   <p className="text-[11px] text-slate-400 px-2">All signed!</p>
+                                )}
+                              </div>
+
+                              {/* Excluded */}
+                              <div>
+                                <div className="flex items-center gap-1.5 mb-2">
+                                  <UserX className="w-3.5 h-3.5 text-slate-500" />
+                                  <span className="text-xs font-semibold text-slate-700">Excluded ({excludedEmps.length})</span>
+                                </div>
+                                {excludedEmps.length > 0 ? excludedEmps.map(emp => (
+                                  <div
+                                    key={emp.employee_code + emp.store}
+                                    className="flex items-center gap-2 px-3 py-1.5 mb-1 bg-slate-100 border border-slate-200 rounded-lg"
+                                  >
+                                    <User className="w-3.5 h-3.5 text-slate-500 shrink-0" />
+                                    <div className="flex-1 min-w-0">
+                                      <p className="text-xs font-medium text-slate-900 truncate">
+                                        {emp.first_name} {emp.last_name}
+                                      </p>
+                                      <p className="text-[11px] text-slate-500 truncate">
+                                        {emp.employee_code} &middot; {emp.job_title}
+                                        {emp.original_rep !== emp.rep && (
+                                          <span className="text-amber-600 ml-1">
+                                            <ArrowRight className="w-2.5 h-2.5 inline" /> from {emp.original_rep}
+                                          </span>
+                                        )}
+                                      </p>
+                                      {emp.exclude_eligible && onToggleExclude && (
+                                        <button
+                                          type="button"
+                                          disabled={isPendingExclude(emp.employee_code)}
+                                          onClick={(event) => {
+                                            event.stopPropagation();
+                                            onToggleExclude(emp, false);
+                                          }}
+                                          className="mt-1 inline-flex items-center gap-1 px-2 py-0.5 rounded border border-slate-300 text-[11px] text-slate-600 hover:bg-slate-200 disabled:opacity-50"
+                                        >
+                                          <Undo2 className="w-3 h-3" />
+                                          Include
+                                        </button>
+                                      )}
+                                    </div>
+                                  </div>
+                                )) : (
+                                  <p className="text-[11px] text-slate-400 px-2">None</p>
                                 )}
                               </div>
                             </div>

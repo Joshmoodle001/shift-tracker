@@ -38,6 +38,15 @@ function normalizeEmployeeCode(code: string): string {
   return String(code || '').replace(/\s+/g, '').toUpperCase();
 }
 
+function isExcludedStatus(status: string): boolean {
+  return String(status || '').trim().toUpperCase() === 'EXCLUDED';
+}
+
+function isExcludeEligibleOriginalRep(originalRep: string): boolean {
+  const upper = String(originalRep || '').toUpperCase();
+  return upper.includes('HOLD LISTING') || upper.includes('MATERNITY');
+}
+
 function calculateRepProgress(data: StoreData[]): RepProgress[] {
   const repMap = new Map<string, RepProgress>();
   for (const d of data) {
@@ -81,6 +90,7 @@ export default function Home() {
   const [selectedEmployeeCode, setSelectedEmployeeCode] = useState('');
   const [isLoading, setIsLoading] = useState(true);
   const [lastUpdated, setLastUpdated] = useState('');
+  const [excludeActionInFlightCodes, setExcludeActionInFlightCodes] = useState<Set<string>>(new Set());
 
   const fetchAllRows = useCallback(async <T,>(table: string): Promise<T[]> => {
     const rows: T[] = [];
@@ -143,6 +153,12 @@ export default function Home() {
           'Employee ID': s.id_number,
         }))
       );
+      const excludedCodeSet = new Set(
+        signed
+          .filter((s) => isExcludedStatus(s.status))
+          .map((s) => normalizeEmployeeCode(s.employee_code))
+          .filter(Boolean)
+      );
 
       const toEmployeeDetails = (rows: DbEmployee[]): EmployeeDetail[] =>
         rows.map(e => ({
@@ -154,7 +170,11 @@ export default function Home() {
           original_rep: e.original_rep || e.rep,
           job_title: e.job_title,
           employee_status: e.employee_status,
-          signed: signedLookup.get(normalizeEmployeeCode(e.employee_code)) ?? false,
+          signed: excludedCodeSet.has(normalizeEmployeeCode(e.employee_code))
+            ? false
+            : (signedLookup.get(normalizeEmployeeCode(e.employee_code)) ?? false),
+          excluded: excludedCodeSet.has(normalizeEmployeeCode(e.employee_code)),
+          exclude_eligible: isExcludeEligibleOriginalRep(e.original_rep || e.rep),
         }));
 
       const toStoreData = (rows: DbEmployee[]): StoreData[] => {
@@ -162,15 +182,20 @@ export default function Home() {
 
         for (const e of rows) {
           const key = `${e.rep}||${e.store}`;
-          const isSigned = signedLookup.get(normalizeEmployeeCode(e.employee_code)) ?? false;
           const existing = mergedMap.get(key);
+
           if (existing) {
-            if (isSigned) existing.signed += 1; else existing.not_signed += 1;
             existing.codes.push(e.employee_code);
+            if (!excludedCodeSet.has(normalizeEmployeeCode(e.employee_code))) {
+              const isSigned = signedLookup.get(normalizeEmployeeCode(e.employee_code)) ?? false;
+              if (isSigned) existing.signed += 1; else existing.not_signed += 1;
+            }
           } else {
+            const isExcluded = excludedCodeSet.has(normalizeEmployeeCode(e.employee_code));
+            const isSigned = signedLookup.get(normalizeEmployeeCode(e.employee_code)) ?? false;
             mergedMap.set(key, {
-              signed: isSigned ? 1 : 0,
-              not_signed: isSigned ? 0 : 1,
+              signed: isExcluded ? 0 : (isSigned ? 1 : 0),
+              not_signed: isExcluded ? 0 : (isSigned ? 0 : 1),
               codes: [e.employee_code],
             });
           }
@@ -278,6 +303,68 @@ export default function Home() {
 
   const canExport = Boolean(selectedRegion || selectedRep);
 
+  const handleToggleExclude = useCallback(async (employee: EmployeeDetail, shouldExclude: boolean) => {
+    if (!employee.exclude_eligible) {
+      return;
+    }
+
+    const normalizedCode = normalizeEmployeeCode(employee.employee_code);
+    if (!normalizedCode) {
+      return;
+    }
+
+    setExcludeActionInFlightCodes((prev) => {
+      const next = new Set(prev);
+      next.add(normalizedCode);
+      return next;
+    });
+
+    try {
+      if (shouldExclude) {
+        const { data: existingMarker, error: markerError } = await supabase
+          .from('shift_signed')
+          .select('id')
+          .eq('employee_code', normalizedCode)
+          .ilike('status', 'EXCLUDED')
+          .limit(1);
+        if (markerError) throw markerError;
+
+        if (!existingMarker || existingMarker.length === 0) {
+          const { error: insertError } = await supabase.from('shift_signed').insert({
+            employee_code: normalizedCode,
+            employee_name: `${employee.first_name} ${employee.last_name}`.trim(),
+            store: employee.store,
+            status: 'Excluded',
+            submitted_by: 'dashboard_exclusion',
+            date: '',
+            department: '',
+            hours: 0,
+            id_number: '',
+          });
+          if (insertError) throw insertError;
+        }
+      } else {
+        const { error: deleteError } = await supabase
+          .from('shift_signed')
+          .delete()
+          .eq('employee_code', normalizedCode)
+          .ilike('status', 'EXCLUDED');
+        if (deleteError) throw deleteError;
+      }
+
+      await loadData();
+    } catch (error) {
+      console.error('Failed to toggle exclusion:', error);
+      window.alert('Could not update exclusion right now. Please try again.');
+    } finally {
+      setExcludeActionInFlightCodes((prev) => {
+        const next = new Set(prev);
+        next.delete(normalizedCode);
+        return next;
+      });
+    }
+  }, [loadData]);
+
   const getReportScope = useCallback(() => {
     const scopedStores = storeData
       .filter((d) => !selectedRegion || getRegionFromRep(d.rep) === selectedRegion)
@@ -286,7 +373,7 @@ export default function Home() {
     const scopedStoreKeys = new Set(scopedStores.map((s) => `${s.rep}||${s.store}`));
 
     const scopedEmployees = employeeDetails.filter((e) =>
-      scopedStoreKeys.has(`${e.rep}||${e.store}`)
+      scopedStoreKeys.has(`${e.rep}||${e.store}`) && !e.excluded
     );
 
     return { scopedStores, scopedEmployees };
@@ -572,6 +659,8 @@ export default function Home() {
                 employeeDetails={checkersEmployeeDetails}
                 title="Rep -> Store -> Employee Hierarchy (Checkers/Shoprite)"
                 emptyMessage="No Checkers/Shoprite stores match the current filters."
+                onToggleExclude={handleToggleExclude}
+                excludeActionInFlightCodes={excludeActionInFlightCodes}
               />
             </div>
 
@@ -586,6 +675,8 @@ export default function Home() {
                 employeeDetails={otherEmployeeDetails}
                 title="Non-Checkers/Shoprite Stores: Rep -> Store -> Employee Hierarchy"
                 emptyMessage="No non-Checkers/Shoprite stores match the current filters."
+                onToggleExclude={handleToggleExclude}
+                excludeActionInFlightCodes={excludeActionInFlightCodes}
               />
             </div>
 
@@ -596,6 +687,8 @@ export default function Home() {
                 employeeDetails={learnerFilteredEmployeeDetails}
                 title="Learners: Rep -> Store -> Employee Hierarchy"
                 emptyMessage="No learners match the current filters."
+                onToggleExclude={handleToggleExclude}
+                excludeActionInFlightCodes={excludeActionInFlightCodes}
               />
             </div>
           </>

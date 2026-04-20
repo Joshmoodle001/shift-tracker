@@ -34,21 +34,43 @@ function normalizeId(idNumber: string | number | null | undefined): string {
   return raw.replace(/\s+/g, '');
 }
 
-function normalizeSignedStatus(status: string): 'Signed' | 'Not Signed' {
-  return String(status || '').trim().toUpperCase() === 'SIGNED' ? 'Signed' : 'Not Signed';
+function normalizeSignedStatus(status: string): 'Signed' | 'Not Signed' | 'Excluded' {
+  const upper = String(status || '').trim().toUpperCase();
+  if (upper === 'EXCLUDED') return 'Excluded';
+  return upper === 'SIGNED' ? 'Signed' : 'Not Signed';
 }
 
 function mergeSignedRows(existingRows: DbSignedRow[], incomingRows: RawSignedShift[]): DbSignedRow[] {
   const merged = new Map<string, DbSignedRow>();
+  const exclusionMarkersByCode = new Map<string, DbSignedRow>();
 
   for (const row of existingRows) {
     const key = normalizeCode(row.employee_code);
     if (!key) continue;
+    const normalizedStatus = normalizeSignedStatus(row.status);
+
+    if (normalizedStatus === 'Excluded') {
+      if (!exclusionMarkersByCode.has(key)) {
+        exclusionMarkersByCode.set(key, {
+          employee_code: key,
+          employee_name: String(row.employee_name || '').trim(),
+          store: String(row.store || '').trim(),
+          status: 'Excluded',
+          submitted_by: String(row.submitted_by || '').trim(),
+          date: String(row.date || '').trim(),
+          department: String(row.department || '').trim(),
+          hours: Number(row.hours || 0),
+          id_number: normalizeId(row.id_number),
+        });
+      }
+      continue;
+    }
+
     merged.set(key, {
       employee_code: key,
       employee_name: String(row.employee_name || '').trim(),
       store: String(row.store || '').trim(),
-      status: normalizeSignedStatus(row.status),
+      status: normalizedStatus,
       submitted_by: String(row.submitted_by || '').trim(),
       date: String(row.date || '').trim(),
       department: String(row.department || '').trim(),
@@ -93,7 +115,7 @@ function mergeSignedRows(existingRows: DbSignedRow[], incomingRows: RawSignedShi
     });
   }
 
-  return Array.from(merged.values());
+  return [...Array.from(merged.values()), ...Array.from(exclusionMarkersByCode.values())];
 }
 
 export default function AdminPage() {

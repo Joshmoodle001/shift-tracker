@@ -48,6 +48,8 @@ export interface EmployeeDetail {
   job_title: string;
   employee_status: string;
   signed: boolean;
+  excluded?: boolean;
+  exclude_eligible?: boolean;
 }
 
 export function filterByStore(data: StoreData[], searchTerm: string): StoreData[] {
