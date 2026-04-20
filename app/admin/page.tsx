@@ -2,7 +2,7 @@
 
 import { useState, useCallback } from 'react';
 import { supabase } from '@/lib/supabase';
-import { parseRouteList, parseSignedShifts, RawEmployee, RawSignedShift, isCheckersOrShopriteStore } from '@/lib/data-processing';
+import { parseRouteList, parseSignedShifts, RawEmployee, RawSignedShift, isCheckersOrShopriteStore, isTerminatedEmployeeStatus } from '@/lib/data-processing';
 import { FileUploader } from '@/components/file-uploader';
 import { Shield, RefreshCw, ArrowLeft, Upload, CheckCircle2, AlertTriangle, Trash2 } from 'lucide-react';
 import Link from 'next/link';
@@ -20,6 +20,16 @@ interface DbSignedRow {
   department: string;
   hours: number;
   id_number: string;
+}
+
+interface DbTerminatedEmployee {
+  employee_code: string;
+  first_name: string;
+  last_name: string;
+  store: string;
+  rep: string;
+  job_title: string;
+  employee_status: string;
 }
 
 function normalizeCode(code: string): string {
@@ -127,6 +137,7 @@ export default function AdminPage() {
   const [isProcessing, setIsProcessing] = useState(false);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const [uploadHistory, setUploadHistory] = useState<{ id: number; file_name: string; file_type: string; record_count: number; created_at: string }[]>([]);
+  const [terminatedEmployees, setTerminatedEmployees] = useState<DbTerminatedEmployee[]>([]);
   const [stats, setStats] = useState({ employees: 0, signed: 0, uploads: 0 });
 
   const loadUploadHistory = useCallback(async () => {
@@ -137,11 +148,38 @@ export default function AdminPage() {
       .limit(20);
     if (data) setUploadHistory(data);
 
-    const [empRes, signedRes, uploadRes] = await Promise.all([
+    const fetchTerminatedEmployees = async (): Promise<DbTerminatedEmployee[]> => {
+      const rows: DbTerminatedEmployee[] = [];
+      let from = 0;
+
+      while (true) {
+        const to = from + PAGE_SIZE - 1;
+        const { data, error } = await supabase
+          .from('shift_employees')
+          .select('employee_code, first_name, last_name, store, rep, job_title, employee_status')
+          .ilike('employee_status', '%TERMINAT%')
+          .order('rep', { ascending: true })
+          .order('store', { ascending: true })
+          .range(from, to);
+        if (error) throw error;
+        if (!data || data.length === 0) break;
+
+        rows.push(...(data as DbTerminatedEmployee[]));
+        if (data.length < PAGE_SIZE) break;
+        from += PAGE_SIZE;
+      }
+
+      return rows;
+    };
+
+    const [empRes, signedRes, uploadRes, terminatedRows] = await Promise.all([
       supabase.from('shift_employees').select('id', { count: 'exact', head: true }),
       supabase.from('shift_signed').select('id', { count: 'exact', head: true }),
       supabase.from('shift_uploads').select('id', { count: 'exact', head: true }),
+      fetchTerminatedEmployees(),
     ]);
+
+    setTerminatedEmployees(terminatedRows.filter((row) => isTerminatedEmployeeStatus(row.employee_status)));
     setStats({
       employees: empRes.count || 0,
       signed: signedRes.count || 0,
@@ -220,6 +258,7 @@ export default function AdminPage() {
         )].length;
         const otherStores = uniqueStores - checkersOrShopriteStores;
         const reassigned = employees.filter(e => e['Original Rep'] !== e.Rep).length;
+        const terminatedCount = employees.filter(e => isTerminatedEmployeeStatus(e['Employee Status'])).length;
         const reassignedNote = reassigned > 0 ? ` (${reassigned} reassigned from general codes like HOLD/MATERNITY/ILL HEALTH)` : '';
 
         console.log('Route list parsed:', employees.length, 'employees,', uniqueStores, 'unique stores');
@@ -254,7 +293,7 @@ export default function AdminPage() {
 
         setMessage({
           type: 'success',
-          text: `Route list uploaded: ${employees.length} employees, ${uniqueStores} unique stores (${checkersOrShopriteStores} Checkers/Shoprite, ${otherStores} other stores)${reassignedNote}.`,
+          text: `Route list uploaded: ${employees.length} employees (${terminatedCount} terminated), ${uniqueStores} unique stores (${checkersOrShopriteStores} Checkers/Shoprite, ${otherStores} other stores)${reassignedNote}.`,
         });
       }
 
@@ -326,6 +365,7 @@ export default function AdminPage() {
     await deleteAll('shift_employees');
     await deleteAll('shift_signed');
     await deleteAll('shift_uploads');
+    setTerminatedEmployees([]);
     setMessage({ type: 'success', text: 'All data cleared.' });
     loadUploadHistory();
     setIsProcessing(false);
@@ -525,6 +565,43 @@ export default function AdminPage() {
             </div>
           ) : (
             <div className="py-8 text-center text-slate-500 text-sm">No uploads yet</div>
+          )}
+        </div>
+
+        {/* Terminated Employees */}
+        <div className="mt-8 bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+          <div className="px-6 py-4 border-b border-slate-200">
+            <h3 className="font-semibold text-slate-900">Terminated Employees ({terminatedEmployees.length})</h3>
+          </div>
+          {terminatedEmployees.length > 0 ? (
+            <div className="overflow-x-auto">
+              <table className="min-w-full divide-y divide-slate-200 text-sm">
+                <thead className="bg-slate-50">
+                  <tr>
+                    <th className="px-4 py-3 text-left font-semibold text-slate-600">Employee</th>
+                    <th className="px-4 py-3 text-left font-semibold text-slate-600">Code</th>
+                    <th className="px-4 py-3 text-left font-semibold text-slate-600">Store</th>
+                    <th className="px-4 py-3 text-left font-semibold text-slate-600">Rep</th>
+                    <th className="px-4 py-3 text-left font-semibold text-slate-600">Job Title</th>
+                    <th className="px-4 py-3 text-left font-semibold text-slate-600">Status</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-200">
+                  {terminatedEmployees.map((employee) => (
+                    <tr key={`${employee.employee_code}||${employee.store}`}>
+                      <td className="px-4 py-3 text-slate-800">{`${employee.first_name} ${employee.last_name}`.trim()}</td>
+                      <td className="px-4 py-3 text-slate-700">{employee.employee_code}</td>
+                      <td className="px-4 py-3 text-slate-700">{employee.store}</td>
+                      <td className="px-4 py-3 text-slate-700">{employee.rep}</td>
+                      <td className="px-4 py-3 text-slate-700">{employee.job_title}</td>
+                      <td className="px-4 py-3 text-red-700 font-medium">{employee.employee_status}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <div className="py-8 text-center text-slate-500 text-sm">No terminated employees in current route list.</div>
           )}
         </div>
       </main>

@@ -6,7 +6,7 @@ import { Filters } from '@/components/filters';
 import { HierarchyView } from '@/components/hierarchy-view';
 import { RepProgress, StoreData, EmployeeDetail } from '@/lib/types';
 import { supabase } from '@/lib/supabase';
-import { buildSignedLookup, getRegionFromRep, isCheckersOrShopriteStore, isLearnerJobTitle } from '@/lib/data-processing';
+import { buildSignedLookup, getRegionFromRep, isCheckersOrShopriteStore, isLearnerJobTitle, isTerminatedEmployeeStatus } from '@/lib/data-processing';
 import { ClipboardCheck, RefreshCw, Shield, Loader2, FileSpreadsheet, FileText } from 'lucide-react';
 import Link from 'next/link';
 import * as XLSX from 'xlsx';
@@ -131,9 +131,10 @@ export default function Home() {
         setIsLoading(false);
         return;
       }
+      const activeEmployees = employees.filter((employee) => !isTerminatedEmployeeStatus(employee.employee_status));
 
       const signedLookup = buildSignedLookup(
-        employees.map(e => ({
+        activeEmployees.map(e => ({
           'Employee Code': e.employee_code,
           'First Name': e.first_name,
           'Last Name': e.last_name,
@@ -215,8 +216,8 @@ export default function Home() {
         return stores;
       };
 
-      const learnerEmployees = employees.filter(e => isLearnerJobTitle(e.job_title));
-      const nonLearnerEmployees = employees.filter(e => !isLearnerJobTitle(e.job_title));
+      const learnerEmployees = activeEmployees.filter(e => isLearnerJobTitle(e.job_title));
+      const nonLearnerEmployees = activeEmployees.filter(e => !isLearnerJobTitle(e.job_title));
 
       const details = toEmployeeDetails(nonLearnerEmployees);
       const learnerDetails = toEmployeeDetails(learnerEmployees);
@@ -226,10 +227,10 @@ export default function Home() {
       const stores = toStoreData(nonLearnerEmployees);
       const learnerStores = toStoreData(learnerEmployees);
 
-      const uniqueReps = [...new Set(employees.map(e => e.rep))].sort();
-      const uniqueRegions = [...new Set(employees.map(e => getRegionFromRep(e.rep)))].sort();
-      const uniqueStores = [...new Set(employees.map(e => e.store))].sort();
-      const uniqueCodes = [...new Set(employees.map(e => e.employee_code))].sort();
+      const uniqueReps = [...new Set(activeEmployees.map(e => e.rep))].sort();
+      const uniqueRegions = [...new Set(activeEmployees.map(e => getRegionFromRep(e.rep)))].sort();
+      const uniqueStores = [...new Set(activeEmployees.map(e => e.store))].sort();
+      const uniqueCodes = [...new Set(activeEmployees.map(e => e.employee_code))].sort();
 
       setStoreData(stores);
       setLearnerStoreData(learnerStores);

@@ -93,6 +93,12 @@ export function isLearnerJobTitle(jobTitle: string): boolean {
   return /\bL01\s*-\s*LEARNER\b/.test(title) || /\bL01\s+LEARNER\b/.test(title);
 }
 
+export function isTerminatedEmployeeStatus(employeeStatus: string): boolean {
+  const status = String(employeeStatus || '').toUpperCase();
+  if (!status) return false;
+  return status.includes('TERMINATED');
+}
+
 export function getRegionFromRep(rep: string): string {
   const upper = String(rep || '').toUpperCase().trim();
   if (!upper) return 'UNASSIGNED';
