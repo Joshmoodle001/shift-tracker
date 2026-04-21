@@ -2,9 +2,11 @@ import * as XLSX from 'xlsx';
 
 const GENERAL_CODE_KEYWORDS = ['ILL HEALTH', 'HOLD LISTING', 'MATERNITY'];
 const CHECKERS_SHOPRITE_KEYWORDS = ['CHECKERS', 'SHOPRITE'];
+const COUNTRY_REGION_CODES = new Set(['FNW', 'HV', 'LIM', 'LV', 'NW']);
 const REGION_LABELS = {
   SR: 'PERISHABLES',
   CH: 'GROCERIES',
+  COUNTRY: 'Country',
 } as const;
 
 export function isGeneralCode(rep: string): boolean {
@@ -113,10 +115,18 @@ export function getRegionFromRep(rep: string): string {
   if (/(^|[_\-\s])SR\d*([_\-\s]|$)/.test(upper)) return REGION_LABELS.SR;
 
   const codeMatchAfterHyphen = upper.match(/-\s*([A-Z]{2,4})(?=[_\-\s]|$)/);
-  if (codeMatchAfterHyphen) return codeMatchAfterHyphen[1];
+  if (codeMatchAfterHyphen) {
+    const code = codeMatchAfterHyphen[1];
+    if (COUNTRY_REGION_CODES.has(code)) return REGION_LABELS.COUNTRY;
+    return code;
+  }
 
   const codeMatchAnywhere = upper.match(/\b([A-Z]{2,4})\b/);
-  if (codeMatchAnywhere) return codeMatchAnywhere[1];
+  if (codeMatchAnywhere) {
+    const code = codeMatchAnywhere[1];
+    if (COUNTRY_REGION_CODES.has(code)) return REGION_LABELS.COUNTRY;
+    return code;
+  }
 
   return 'UNASSIGNED';
 }
