@@ -33,6 +33,7 @@ interface DbSigned {
 }
 
 const PAGE_SIZE = 1000;
+type ReportCategory = 'checkers_shoprite' | 'non_checkers_shoprite';
 
 function normalizeEmployeeCode(code: string): string {
   return String(code || '').replace(/\s+/g, '').toUpperCase();
@@ -312,6 +313,20 @@ export default function Home() {
 
   const canExport = Boolean(selectedRegion || selectedRep);
 
+  const getReportCategoryMeta = useCallback((category: ReportCategory) => {
+    if (category === 'checkers_shoprite') {
+      return {
+        displayName: 'Checkers/Shoprite',
+        fileTag: 'checkers_shoprite',
+      };
+    }
+
+    return {
+      displayName: 'Non-Checkers/Shoprite',
+      fileTag: 'non_checkers_shoprite',
+    };
+  }, []);
+
   const handleToggleExclude = useCallback(async (employee: EmployeeDetail, shouldExclude: boolean) => {
     if (!employee.exclude_eligible) {
       return;
@@ -374,10 +389,18 @@ export default function Home() {
     }
   }, [loadData]);
 
-  const getReportScope = useCallback(() => {
+  const getReportScope = useCallback((category: ReportCategory) => {
     const scopedStores = storeData
       .filter((d) => !selectedRegion || getRegionFromRep(d.rep) === selectedRegion)
-      .filter((d) => !selectedRep || d.rep === selectedRep);
+      .filter((d) => !selectedRep || d.rep === selectedRep)
+      .filter((d) => {
+        const isCheckersStore = isCheckersOrShopriteStore(d.store);
+        const forcedToNonCheckers = isRepForcedToNonCheckers(d.rep);
+        if (category === 'checkers_shoprite') {
+          return isCheckersStore && !forcedToNonCheckers;
+        }
+        return !isCheckersStore || forcedToNonCheckers;
+      });
 
     const scopedStoreKeys = new Set(scopedStores.map((s) => `${s.rep}||${s.store}`));
 
@@ -388,10 +411,11 @@ export default function Home() {
     return { scopedStores, scopedEmployees };
   }, [storeData, employeeDetails, selectedRegion, selectedRep]);
 
-  const exportToExcel = useCallback(() => {
+  const exportToExcel = useCallback((category: ReportCategory) => {
     if (!canExport) return;
-    const { scopedStores, scopedEmployees } = getReportScope();
+    const { scopedStores, scopedEmployees } = getReportScope(category);
     if (scopedStores.length === 0) return;
+    const categoryMeta = getReportCategoryMeta(category);
 
     const repSummary = calculateRepProgress(scopedStores).map((rep) => ({
       Region: getRegionFromRep(rep.rep),
@@ -450,13 +474,14 @@ export default function Home() {
     const scopeTag = selectedRep
       ? selectedRep.replace(/[^A-Z0-9]+/gi, '_')
       : (selectedRegion || 'ALL').replace(/[^A-Z0-9]+/gi, '_');
-    XLSX.writeFile(workbook, `shift_tracker_report_${scopeTag}_${dateTag}.xlsx`);
-  }, [canExport, getReportScope, selectedRegion, selectedRep]);
+    XLSX.writeFile(workbook, `shift_tracker_report_${categoryMeta.fileTag}_${scopeTag}_${dateTag}.xlsx`);
+  }, [canExport, getReportCategoryMeta, getReportScope, selectedRegion, selectedRep]);
 
-  const exportToPdf = useCallback(() => {
+  const exportToPdf = useCallback((category: ReportCategory) => {
     if (!canExport) return;
-    const { scopedStores, scopedEmployees } = getReportScope();
+    const { scopedStores, scopedEmployees } = getReportScope(category);
     if (scopedStores.length === 0) return;
+    const categoryMeta = getReportCategoryMeta(category);
 
     const repList = calculateRepProgress(scopedStores).sort((a, b) => a.rep.localeCompare(b.rep));
     const printWindow = window.open('', '_blank');
@@ -505,8 +530,8 @@ export default function Home() {
     }).join('');
 
     const reportTitle = selectedRep
-      ? `Rep Report - ${selectedRep}`
-      : `Region Report - ${selectedRegion}`;
+      ? `${categoryMeta.displayName} Rep Report - ${selectedRep}`
+      : `${categoryMeta.displayName} Region Report - ${selectedRegion}`;
 
     printWindow.document.write(`
       <html>
@@ -535,7 +560,7 @@ export default function Home() {
     printWindow.document.close();
     printWindow.focus();
     printWindow.print();
-  }, [canExport, getReportScope, selectedRegion, selectedRep]);
+  }, [canExport, getReportCategoryMeta, getReportScope, selectedRegion, selectedRep]);
 
   return (
     <div className="min-h-screen bg-slate-50">
@@ -638,24 +663,44 @@ export default function Home() {
                 </div>
                 <div className="flex flex-col sm:flex-row gap-2">
                   <button
-                    onClick={exportToExcel}
+                    onClick={() => exportToExcel('checkers_shoprite')}
                     disabled={!canExport}
                     className={`flex items-center justify-center gap-2 px-4 py-2 rounded-lg text-sm font-medium ${
                       canExport ? 'bg-emerald-600 text-white hover:bg-emerald-700' : 'bg-slate-200 text-slate-500 cursor-not-allowed'
                     }`}
                   >
                     <FileSpreadsheet className="w-4 h-4" />
-                    Export Excel
+                    Checkers/Shoprite Excel
                   </button>
                   <button
-                    onClick={exportToPdf}
+                    onClick={() => exportToPdf('checkers_shoprite')}
                     disabled={!canExport}
                     className={`flex items-center justify-center gap-2 px-4 py-2 rounded-lg text-sm font-medium ${
                       canExport ? 'bg-indigo-600 text-white hover:bg-indigo-700' : 'bg-slate-200 text-slate-500 cursor-not-allowed'
                     }`}
                   >
                     <FileText className="w-4 h-4" />
-                    Export PDF
+                    Checkers/Shoprite PDF
+                  </button>
+                  <button
+                    onClick={() => exportToExcel('non_checkers_shoprite')}
+                    disabled={!canExport}
+                    className={`flex items-center justify-center gap-2 px-4 py-2 rounded-lg text-sm font-medium ${
+                      canExport ? 'bg-emerald-600 text-white hover:bg-emerald-700' : 'bg-slate-200 text-slate-500 cursor-not-allowed'
+                    }`}
+                  >
+                    <FileSpreadsheet className="w-4 h-4" />
+                    Non-Checkers/Shoprite Excel
+                  </button>
+                  <button
+                    onClick={() => exportToPdf('non_checkers_shoprite')}
+                    disabled={!canExport}
+                    className={`flex items-center justify-center gap-2 px-4 py-2 rounded-lg text-sm font-medium ${
+                      canExport ? 'bg-indigo-600 text-white hover:bg-indigo-700' : 'bg-slate-200 text-slate-500 cursor-not-allowed'
+                    }`}
+                  >
+                    <FileText className="w-4 h-4" />
+                    Non-Checkers/Shoprite PDF
                   </button>
                 </div>
               </div>
