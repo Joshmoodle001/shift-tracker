@@ -249,7 +249,7 @@ export function HierarchyView({
                                           </span>
                                         )}
                                       </p>
-                                      {emp.exclude_eligible && onToggleExclude && (
+                                      {onToggleExclude && (
                                         <button
                                           type="button"
                                           disabled={isPendingExclude(emp.employee_code)}
@@ -294,7 +294,7 @@ export function HierarchyView({
                                           </span>
                                         )}
                                       </p>
-                                      {emp.exclude_eligible && onToggleExclude && (
+                                      {onToggleExclude && (
                                         <button
                                           type="button"
                                           disabled={isPendingExclude(emp.employee_code)}

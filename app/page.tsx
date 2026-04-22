@@ -328,10 +328,6 @@ export default function Home() {
   }, []);
 
   const handleToggleExclude = useCallback(async (employee: EmployeeDetail, shouldExclude: boolean) => {
-    if (!employee.exclude_eligible) {
-      return;
-    }
-
     const normalizedCode = normalizeEmployeeCode(employee.employee_code);
     if (!normalizedCode) {
       return;
