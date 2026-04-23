@@ -260,38 +260,77 @@ export default function Home() {
     ? reps.filter((rep) => getRegionFromRep(rep) === selectedRegion)
     : reps;
 
-  const filteredData = storeData
-    .filter(d => !selectedRegion || getRegionFromRep(d.rep) === selectedRegion)
-    .filter(d => !selectedStore || d.store.toLowerCase().includes(selectedStore.toLowerCase()))
-    .filter(d => !selectedRep || d.rep === selectedRep)
-    .filter(d => {
-      if (!selectedEmployeeCode) return true;
-      const selectedCode = normalizeEmployeeCode(selectedEmployeeCode);
-      return d.employee_codes.some(c => normalizeEmployeeCode(c).includes(selectedCode));
-    });
-
   const filteredEmployeeDetails = employeeDetails
+    .filter(e => !selectedRegion || getRegionFromRep(e.rep) === selectedRegion)
+    .filter(e => !selectedStore || e.store.toLowerCase().includes(selectedStore.toLowerCase()))
+    .filter(e => !selectedRep || e.rep === selectedRep)
     .filter(e => {
       if (!selectedEmployeeCode) return true;
       const selectedCode = normalizeEmployeeCode(selectedEmployeeCode);
       return normalizeEmployeeCode(e.employee_code).includes(selectedCode);
     });
-  const learnerFilteredData = learnerStoreData
-    .filter(d => !selectedRegion || getRegionFromRep(d.rep) === selectedRegion)
-    .filter(d => !selectedStore || d.store.toLowerCase().includes(selectedStore.toLowerCase()))
-    .filter(d => !selectedRep || d.rep === selectedRep)
-    .filter(d => {
-      if (!selectedEmployeeCode) return true;
-      const selectedCode = normalizeEmployeeCode(selectedEmployeeCode);
-      return d.employee_codes.some(c => normalizeEmployeeCode(c).includes(selectedCode));
+
+  const applyScopedCounts = (stores: StoreData[], details: EmployeeDetail[]): StoreData[] => {
+    const countsByStore = new Map<string, { signed: number; notSigned: number }>();
+
+    for (const detail of details) {
+      if (detail.excluded) continue;
+      const key = `${detail.rep}||${detail.store}`;
+      const existing = countsByStore.get(key) ?? { signed: 0, notSigned: 0 };
+      if (detail.signed) {
+        existing.signed += 1;
+      } else {
+        existing.notSigned += 1;
+      }
+      countsByStore.set(key, existing);
+    }
+
+    return stores.map((store) => {
+      const key = `${store.rep}||${store.store}`;
+      const scoped = countsByStore.get(key);
+      return {
+        ...store,
+        signed_count: scoped?.signed ?? 0,
+        not_signed_count: scoped?.notSigned ?? 0,
+      };
     });
+  };
+
+  const filteredData = applyScopedCounts(
+    storeData
+      .filter(d => !selectedRegion || getRegionFromRep(d.rep) === selectedRegion)
+      .filter(d => !selectedStore || d.store.toLowerCase().includes(selectedStore.toLowerCase()))
+      .filter(d => !selectedRep || d.rep === selectedRep)
+      .filter(d => {
+        if (!selectedEmployeeCode) return true;
+        const selectedCode = normalizeEmployeeCode(selectedEmployeeCode);
+        return d.employee_codes.some(c => normalizeEmployeeCode(c).includes(selectedCode));
+      }),
+    filteredEmployeeDetails
+  );
 
   const learnerFilteredEmployeeDetails = learnerEmployeeDetails
+    .filter(e => !selectedRegion || getRegionFromRep(e.rep) === selectedRegion)
+    .filter(e => !selectedStore || e.store.toLowerCase().includes(selectedStore.toLowerCase()))
+    .filter(e => !selectedRep || e.rep === selectedRep)
     .filter(e => {
       if (!selectedEmployeeCode) return true;
       const selectedCode = normalizeEmployeeCode(selectedEmployeeCode);
       return normalizeEmployeeCode(e.employee_code).includes(selectedCode);
     });
+
+  const learnerFilteredData = applyScopedCounts(
+    learnerStoreData
+    .filter(d => !selectedRegion || getRegionFromRep(d.rep) === selectedRegion)
+    .filter(d => !selectedStore || d.store.toLowerCase().includes(selectedStore.toLowerCase()))
+    .filter(d => !selectedRep || d.rep === selectedRep)
+    .filter(d => {
+      if (!selectedEmployeeCode) return true;
+      const selectedCode = normalizeEmployeeCode(selectedEmployeeCode);
+      return d.employee_codes.some(c => normalizeEmployeeCode(c).includes(selectedCode));
+    }),
+    learnerFilteredEmployeeDetails
+  );
 
   const checkersStoreData = filteredData.filter(
     (d) => isCheckersOrShopriteStore(d.store) && !isRepForcedToNonCheckers(d.rep)
